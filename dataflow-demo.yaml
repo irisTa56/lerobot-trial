@@ -1,0 +1,15 @@
+nodes:
+  - id: keyboard
+    build: uv sync --frozen
+    path: src/nodes/run_keyboard.py
+    inputs:
+      keep-alive: dora/timer/secs/1
+    outputs:
+      - action
+  - id: gym-hil
+    build: uv sync --frozen
+    path: with_mujoco_on_mac.sh
+    args: src/nodes/run_gym_hil.py
+    inputs:
+      tick: dora/timer/millis/100
+      action: keyboard/action

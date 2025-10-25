@@ -1,0 +1,30 @@
+[project]
+name = "lerobot-trial"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dora-rs-cli>=0.3.13",
+    "gym-hil>=0.1.13",
+    "lerobot>=0.4.0",
+    "pynput>=1.8.1",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18.2",
+    "ruff>=0.14.2",
+    "rumdl>=0.0.166",
+]
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+
+[tool.ruff.lint]
+extend-select = ["I"]

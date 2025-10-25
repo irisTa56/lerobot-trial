@@ -1,0 +1,35 @@
+[tools]
+lychee = "0.21.0"
+python = "3.12.12"
+uv = "0.9.5"
+
+[tasks.all-checks]
+description = "Run all checks"
+depends = [
+  "format-md",
+  "format-py",
+  "link-check",
+  "lint-py",
+  "type-check",
+]
+
+[tasks.format-md]
+description = "Format markdown files"
+run = "uv run rumdl fmt"
+
+[tasks.format-py]
+description = "Format Python files"
+run = "uv run ruff format"
+
+[tasks.link-check]
+description = "Check if links are valid"
+run = "lychee ."
+
+[tasks.lint-py]
+description = "Lint Python files"
+run = "uv run ruff check --fix"
+depends = ["format-py"]
+
+[tasks.type-check]
+description = "Check Python types"
+run = "uv run mypy ."
