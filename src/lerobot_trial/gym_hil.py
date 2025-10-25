@@ -1,11 +1,11 @@
 """Utilities to interact with the Gym-HIL environment."""
 
 from enum import Enum
+from typing import Any, SupportsFloat
 
 import gymnasium as gym
 import numpy as np
-from gym_hil import GymRenderingSpec, PassiveViewerWrapper
-from gym_hil.envs import PandaPickCubeGymEnv
+from gym_hil import GymRenderingSpec, MujocoGymEnv, PassiveViewerWrapper
 from numpy.typing import NDArray
 
 from .config import COMMON_CONFIG
@@ -21,6 +21,31 @@ class ActionDim(str, Enum):
         return self.value
 
 
+class AbsolutePositionControl(gym.Wrapper):  # type: ignore[type-arg]
+    """Gym wrapper to accept absolute position commands."""
+
+    def __init__(self, env: MujocoGymEnv) -> None:
+        super().__init__(env)
+
+    def reset(
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
+    ) -> tuple[Any, dict[str, Any]]:
+        obs, info = self.env.reset(seed=seed, options=options)
+        self._origin_xyz = self._get_xyz()
+        return obs, info
+
+    def step(
+        self, action: NDArray[np.floating]
+    ) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
+        current_xyz = self._get_xyz() - self._origin_xyz
+        action[:3] -= current_xyz
+        return self.env.step(action)
+
+    def _get_xyz(self) -> NDArray[np.floating]:
+        env: MujocoGymEnv = self.unwrapped
+        return env.data.mocap_pos[0].copy()  # type: ignore[no-any-return]
+
+
 def init_action() -> dict[ActionDim, float]:
     return {
         ActionDim.X: 0.0,
@@ -30,7 +55,7 @@ def init_action() -> dict[ActionDim, float]:
     }
 
 
-def make_env(headless: bool) -> PandaPickCubeGymEnv:
+def make_env(headless: bool) -> MujocoGymEnv:
     env = gym.make(
         id="gym_hil/PandaPickCubeBase-v0",
         # Unlimited steps; episode will be done on success or user interrupt.
@@ -46,7 +71,8 @@ def make_env(headless: bool) -> PandaPickCubeGymEnv:
         random_block_position=True,
     )
 
-    return env if headless else PassiveViewerWrapper(env)
+    env = env if headless else PassiveViewerWrapper(env)
+    return AbsolutePositionControl(env)
 
 
 def action_to_env_array(action: dict[ActionDim, float]) -> NDArray[np.floating]:

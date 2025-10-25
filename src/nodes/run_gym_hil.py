@@ -25,21 +25,19 @@ def main() -> None:
 
     for event in node:
         match (event["type"], event.get("id")):
-            case ("INPUT", "tick"):
+            case ("INPUT", ChannelId.ACTION):
                 if not should_step:
                     continue
 
                 start = time.perf_counter()
+                action = parse_single_value_in_event(event)
                 env_action = action_to_env_array(action)
                 obs, _reward, terminated, truncated, _info = env.step(env_action)
-                logging.debug(f"Step took {time.perf_counter() - start:.4f} seconds.")
+                logging.info(f"Step took {time.perf_counter() - start:.4f} seconds.")
 
                 if terminated or truncated:
                     logging.info(f"Done: {terminated=}, {truncated=}")
                     should_step = False
-
-            case ("INPUT", ChannelId.ACTION):
-                action = parse_single_value_in_event(event)
 
             case ("STOP", _):
                 logging.info("Received stop signal from Dora.")

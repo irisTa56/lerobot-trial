@@ -57,45 +57,56 @@ On macOS with MuJoCo, the `with_mujoco_on_mac.sh` wrapper script is required to 
 
 ### Dora-RS Dataflow System
 
-The system uses a dataflow architecture with two main nodes communicating via Apache Arrow messages:
+The system uses a tick-based dataflow architecture with two main nodes communicating via Apache Arrow messages:
 
 1. **keyboard node** (`src/nodes/run_keyboard.py`):
-   - Listens to keyboard input via pynput
-   - Translates keystrokes into delta actions
-   - Publishes action messages on the `action` channel
-   - Runs asynchronously with keyboard events in a separate thread
+   - Receives 10 Hz timer ticks from Dora
+   - Listens to keyboard input via pynput in a separate thread
+   - Maintains key press state for continuous movement
+   - On each tick, publishes accumulated absolute position commands on the `action` channel
+   - Uses thread locking when accessing the Dora node due to concurrent keyboard events
 
 2. **gym-hil node** (`src/nodes/run_gym_hil.py`):
-   - Manages the Gym-HIL simulation environment (PandaPickCubeGymEnv)
-   - Receives actions from keyboard node
-   - Steps the environment at 10 Hz (100ms tick interval)
+   - Manages the Gym-HIL simulation environment with absolute position control wrapper
+   - Receives actions from keyboard node at 10 Hz
+   - Steps the environment immediately upon receiving each action
    - Handles episode termination/truncation
 
 ### Key Components
 
 - **`lerobot_trial/config.py`**: Shared configuration, particularly `control_dt` (0.1s) which must match the Dora timer interval
 - **`lerobot_trial/dora_ch.py`**: Utilities for Dora channel communication using PyArrow
-- **`lerobot_trial/gym_hil.py`**: Environment setup and action conversion utilities
+- **`lerobot_trial/gym_hil.py`**: Environment setup, action conversion utilities, and the `AbsolutePositionControl` wrapper that converts absolute position commands to delta actions by tracking the mocap position
 
-### Action Space
+### Action Space and Control
 
 The action dictionary uses 4 dimensions (see `ActionDim` enum):
 
-- `x`, `y`, `z`: Cartesian position deltas
-- `gripper`: Gripper open/close state
+- `x`, `y`, `z`: Absolute Cartesian positions (accumulated from key presses at 0.005 units per tick)
+- `gripper`: Gripper state (1.0 for open, -1.0 for close, 0.0 for neutral)
+
+The `AbsolutePositionControl` wrapper in [gym_hil.py](src/lerobot_trial/gym_hil.py) converts these absolute positions to delta actions by:
+
+1. Storing the initial position on reset as the origin
+2. On each step, calculating the delta from the current position to the target position
+3. Passing the delta action to the underlying environment
 
 Actions are converted to 7D environment arrays in `action_to_env_array()`:
 `[x, y, z, 0, 0, 0, gripper]` (no orientation control)
 
 ### Keyboard Control Mapping
 
-- Arrow keys: X/Y movement
-- Left/Right Shift: Z movement (up/down)
-- Left/Right Command: Gripper control
+Keys can be held down for continuous movement:
+
+- Arrow keys: X/Y movement (continuous while held)
+- Left/Right Shift: Z movement up/down (continuous while held)
+- Left/Right Command: Gripper control (open/close while held)
 
 ## Important Constraints
 
-- `control_dt` in `config.py` MUST match the tick interval in `dataflow-demo.yaml`
+- `control_dt` in [config.py](src/lerobot_trial/config.py) MUST match the tick interval in [dataflow-demo.yaml](dataflow-demo.yaml) (both 100ms)
+- The keyboard node receives tick events at 10 Hz and publishes actions on each tick
+- The gym-hil node steps the environment immediately upon receiving each action (no separate timer)
 - The keyboard node uses thread locking when accessing the Dora node due to concurrent keyboard events
 - Type checking is strict (`mypy --strict`)
 - Ruff enforces import sorting (extend-select = ["I"])
