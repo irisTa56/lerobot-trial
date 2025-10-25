@@ -223,11 +223,11 @@ __marimo__/
 # Custom ignores
 #
 
-# Dora
-out/
-
 # Local mise config
 mise.local.toml
 
-# LeRobot training
+# Dora
+out/
+
+# LeRobot
 outputs/

@@ -24,6 +24,12 @@ uv sync --frozen
 source .venv/bin/activate
 ```
 
+Currently, FFmpeg's major version must be at most 7 to be compatible with PyTorch used by LeRobot:
+
+```shell
+brew install ffmpeg@7
+```
+
 ### Code Quality
 
 Run all checks:
@@ -44,11 +50,27 @@ mise link-check       # Validate links with lychee
 
 ### Running the Simulation
 
-The project uses Dora-RS dataflows defined in `dataflow-demo.yaml`. Start the simulation with:
+The project uses Dora-RS dataflows. For teleoperation demo, use `dataflow-demo.yaml`:
 
 ```shell
 dora up
 dora start dataflow-demo.yaml
+```
+
+For recording datasets with LeRobot integration, use `dataflow-record.yaml`:
+
+```shell
+# Optional: clear previous records to record from scratch
+rm -rf outputs/record/gym_hil_trial
+
+# Run the dataflow to record dataset
+dora run dataflow-record.yaml
+
+# Visualize recorded dataset using Rerun
+DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-dataset-viz \
+  --repo-id "record/gym_hil_trial" \
+  --root "outputs/record/gym_hil_trial" \
+  --episode-index 0
 ```
 
 On macOS with MuJoCo, the `with_mujoco_on_mac.sh` wrapper script is required to set up the proper `DYLD_LIBRARY_PATH` for the Python shared library.
@@ -57,26 +79,38 @@ On macOS with MuJoCo, the `with_mujoco_on_mac.sh` wrapper script is required to 
 
 ### Dora-RS Dataflow System
 
-The system uses a tick-based dataflow architecture with two main nodes communicating via Apache Arrow messages:
+The system uses a tick-based dataflow architecture with multiple nodes communicating via Apache Arrow messages:
 
-1. **keyboard node** (`src/nodes/run_keyboard.py`):
+1. **keyboard node** ([run_keyboard.py](src/nodes/run_keyboard.py)):
    - Receives 10 Hz timer ticks from Dora
    - Listens to keyboard input via pynput in a separate thread
    - Maintains key press state for continuous movement
    - On each tick, publishes accumulated absolute position commands on the `action` channel
+   - Publishes control commands (ESC, CTRL, SPACE) on the `control` channel for recording workflow
    - Uses thread locking when accessing the Dora node due to concurrent keyboard events
 
-2. **gym-hil node** (`src/nodes/run_gym_hil.py`):
+2. **gym-hil node** ([run_gym_hil.py](src/nodes/run_gym_hil.py)):
    - Manages the Gym-HIL simulation environment with absolute position control wrapper
    - Receives actions from keyboard node at 10 Hz
    - Steps the environment immediately upon receiving each action
-   - Handles episode termination/truncation
+   - Publishes episode frames (action + observation) on the `episode` channel
+   - Publishes success signal on the `success` channel when episode terminates
+   - Handles control commands: ESC to exit, CTRL to break episode, SPACE to reset environment
+
+3. **lerobot node** ([record_by_lerobot.py](src/nodes/record_by_lerobot.py)) (recording mode only):
+   - Receives episode frames from gym-hil node and records them using LeRobot's recording infrastructure
+   - Handles control commands to manage recording workflow (start, stop, break episode)
+   - Manages episode completion and environment reset coordination
 
 ### Key Components
 
-- **`lerobot_trial/config.py`**: Shared configuration, particularly `control_dt` (0.1s) which must match the Dora timer interval
-- **`lerobot_trial/dora_ch.py`**: Utilities for Dora channel communication using PyArrow
-- **`lerobot_trial/gym_hil.py`**: Environment setup, action conversion utilities, and the `AbsolutePositionControl` wrapper that converts absolute position commands to delta actions by tracking the mocap position
+- **[config.py](src/lerobot_trial/config.py)**: Shared configuration, particularly `control_dt` (0.1s) which must match the Dora timer interval
+- **[dora_ch.py](src/lerobot_trial/dora_ch.py)**: Utilities for Dora channel communication using PyArrow, including `ChannelId` enum (ACTION, CONTROL, EPISODE, SUCCESS) and `ControlCmd` enum (ESC, CTRL, SPACE)
+- **[gym_hil.py](src/lerobot_trial/gym_hil.py)**: Environment setup, action conversion utilities, and the `AbsolutePositionControl` wrapper that converts absolute position commands to delta actions by tracking the mocap position
+- **[gym_client.py](src/lerobot_trial/gym_client.py)**: Dora event stream client for consuming gym-hil outputs (`DoraEventStreamClosed` exception)
+- **[gym_utils.py](src/lerobot_trial/gym_utils.py)**: Utilities for converting episode frames to/from Dora messages
+- **[lerobot_control_events.py](src/lerobot_trial/lerobot_control_events.py)**: Control event handling for LeRobot recording workflow
+- **[hw_impl/](src/lerobot_trial/hw_impl/)**: Hardware implementation interfaces including base classes for robots and teleoperation, and the gym-hil recorder implementation
 
 ### Action Space and Control
 
@@ -96,17 +130,43 @@ Actions are converted to 7D environment arrays in `action_to_env_array()`:
 
 ### Keyboard Control Mapping
 
-Keys can be held down for continuous movement:
+**Movement keys** (can be held down for continuous movement):
 
 - Arrow keys: X/Y movement (continuous while held)
 - Left/Right Shift: Z movement up/down (continuous while held)
 - Left/Right Command: Gripper control (open/close while held)
 
+**Control keys** (for recording workflow):
+
+- **Esc**: Stop data recording and exit
+- **Ctrl**: Break the current episode for re-recording
+- **Space**: Finish the current episode or reset the environment
+
+Note: Control key bindings differ from the original LeRobot keyboard controls to avoid conflicts.
+
+### Recording Workflow
+
+When using [dataflow-record.yaml](dataflow-record.yaml) for dataset recording:
+
+1. Execute `dora run dataflow-record.yaml`
+2. Perform teleoperation to complete the task (e.g., pick up a cube)
+3. When the task is completed, the episode finishes automatically
+4. LeRobot script enters a resetting phase, which is not recorded
+5. Press **Space** to reset the environment (finish the resetting phase)
+6. Repeat from step 2 until the desired number of episodes is recorded
+
+The control commands enable flexible recording workflow:
+
+- Use **Ctrl** to break and re-record an episode if a mistake is made
+- Use **Esc** to stop recording and exit when done
+
 ## Important Constraints
 
-- `control_dt` in [config.py](src/lerobot_trial/config.py) MUST match the tick interval in [dataflow-demo.yaml](dataflow-demo.yaml) (both 100ms)
+- `control_dt` in [config.py](src/lerobot_trial/config.py) MUST match the tick interval in [dataflow-demo.yaml](dataflow-demo.yaml) and [dataflow-record.yaml](dataflow-record.yaml) (all 100ms)
 - The keyboard node receives tick events at 10 Hz and publishes actions on each tick
 - The gym-hil node steps the environment immediately upon receiving each action (no separate timer)
+- In recording mode, gym-hil publishes episode frames after each step and success signals on episode completion
 - The keyboard node uses thread locking when accessing the Dora node due to concurrent keyboard events
+- Control commands (ESC, CTRL, SPACE) reset the action state to prevent unintended movement after control operations
 - Type checking is strict (`mypy --strict`)
 - Ruff enforces import sorting (extend-select = ["I"])

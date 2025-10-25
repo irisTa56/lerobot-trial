@@ -20,6 +20,12 @@ uv sync --frozen
 source .venv/bin/activate
 ```
 
+Currently, FFmpeg's major version must be at most 7 to be compatible with PyTorch used by LeRobot.
+
+```shell
+brew install ffmpeg@7
+```
+
 ## Try Teleoperation
 
 Run the Dora dataflow defined in `dataflow-demo.yaml`:
@@ -49,6 +55,64 @@ flowchart TB
 
   keyboard -- action --> gym-hil
   dora/timer/millis/100 -- tick --> keyboard
+```
+
+## Record Dataset
+
+To record episodes, run the dataflow defined in `dataflow-record.yaml`:
+
+```shell
+# Optional: clear previous records to record from scratch
+rm -rf outputs/record/gym_hil_trial
+
+# Run the dataflow to record dataset
+dora run dataflow-record.yaml
+
+# Visualize recorded dataset using Rerun
+DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-dataset-viz \
+  --repo-id "record/gym_hil_trial" \
+  --root "outputs/record/gym_hil_trial" \
+  --episode-index 0
+```
+
+The following key bindings are available to control data recording:
+
+- *Esc* to stop data recording and exit
+- *Ctrl* to break the current episode for re-recording
+- *Space* to finish the current episode or reset the environment
+  - Note that episodes will finish automatically when the task is completed.
+
+Note that these control key bindings differ from the original LeRobot keyboard controls to avoid conflicts.
+
+Typical recording scenarios include:
+
+1. Execute `dora run dataflow-record.yaml`
+2. Perform teleoperation to complete the task (e.g., pick up a cube)
+3. When the task is completed, the episode finishes automatically
+4. LeRobot script enters a resetting phase, which is not recorded
+5. Press *Space* to reset the environment (finish the resetting phase)
+6. Repeat from step 2 until the desired number of episodes is recorded
+
+As a reference, the dataflow defined in `dataflow-record.yaml` is as follows:
+
+```mermaid
+flowchart TB
+  gym-hil["**gym-hil**"]
+  keyboard["**keyboard**"]
+  lerobot[/"**lerobot**"\]
+
+  subgraph ___dora___ [dora]
+    subgraph ___timer_timer___ [timer]
+      dora/timer/millis/100[\millis/100/]
+    end
+  end
+
+  keyboard -- action --> gym-hil
+  keyboard -- control --> gym-hil
+  dora/timer/millis/100 -- tick --> keyboard
+  keyboard -- control --> lerobot
+  gym-hil -- episode --> lerobot
+  gym-hil -- success --> lerobot
 ```
 
 ## Development

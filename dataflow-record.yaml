@@ -1,0 +1,27 @@
+nodes:
+  - id: keyboard
+    build: uv sync --frozen
+    path: src/nodes/run_keyboard.py
+    inputs:
+      tick: dora/timer/millis/100
+    outputs:
+      - action
+      - control
+  - id: gym-hil
+    build: uv sync --frozen
+    path: with_mujoco_on_mac.sh
+    args: src/nodes/run_gym_hil.py
+    inputs:
+      action: keyboard/action
+      control: keyboard/control
+    outputs:
+      - episode
+      - success
+  - id: lerobot
+    build: uv sync --frozen
+    path: src/nodes/record_by_lerobot.py
+    args: --config_path examples/config_gym_hil_record.json
+    inputs:
+      control: keyboard/control
+      episode: gym-hil/episode
+      success: gym-hil/success

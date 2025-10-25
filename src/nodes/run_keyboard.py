@@ -1,5 +1,6 @@
 import logging
 import threading
+from typing import Any
 
 import pyarrow as pa
 from dora import Node
@@ -8,9 +9,18 @@ from pynput.keyboard import Key, Listener
 
 from lerobot_trial.dora_ch import (
     ChannelId,
+    ControlCmd,
+    is_timeout_event,
     make_dict_message,
+    try_recv_event,
 )
 from lerobot_trial.gym_hil import ActionDim, init_action
+
+CONTROL_KEY_MAP = {
+    Key.esc: ControlCmd.ESC,
+    Key.ctrl: ControlCmd.CTRL,
+    Key.space: ControlCmd.SPACE,
+}
 
 
 class ActionState:
@@ -31,6 +41,9 @@ class ActionState:
             ActionDim.Y: False,
             ActionDim.Z: False,
         }
+
+    def reset(self) -> None:
+        self._state = init_action()
 
     def handle_key_event(self, key: Key, pressed: bool) -> None:
         if key == Key.up:
@@ -69,14 +82,27 @@ def main() -> None:
     action = ActionState()
 
     def handle_key_event(key: Key, pressed: bool) -> None:
+        if not pressed and key in CONTROL_KEY_MAP:
+            command = CONTROL_KEY_MAP[key]
+            with lock:
+                node.send_output(ChannelId.CONTROL, command.to_message())
+                action.reset()
+        else:
+            with lock:
+                action.handle_key_event(key, pressed)
+
+    def try_recv_dora_event() -> dict[str, Any] | None:
         with lock:
-            action.handle_key_event(key, pressed)
+            return try_recv_event(node)
 
     with Listener(
         on_press=lambda key: handle_key_event(key, True),
         on_release=lambda key: handle_key_event(key, False),
     ):
-        for event in node:
+        while event := try_recv_dora_event():
+            if is_timeout_event(event):
+                continue
+
             match (event["type"], event.get("id")):
                 case ("INPUT", "tick"):
                     with lock:
