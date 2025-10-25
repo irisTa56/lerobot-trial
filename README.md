@@ -1,6 +1,7 @@
 # LeRobot Trial
 
 Playground to experiment with LeRobot without real robots.
+Currently uses [Gym-HIL](https://github.com/huggingface/gym-hil) for simulated robotics environments.
 
 ## Setup
 
