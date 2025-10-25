@@ -1,7 +1,7 @@
 # LeRobot Trial
 
 Playground to experiment with LeRobot without real robots.
-Currently uses [Gym-HIL](https://github.com/huggingface/gym-hil) for simulated robotics environments.
+Currently uses [Gym-HIL](https://github.com/huggingface/gym-hil) for simulated robotics environments and [Dora-rs](https://github.com/dora-rs/dora) for dataflow orchestration.
 
 ## Setup
 
