@@ -13,19 +13,15 @@ class ChannelId(str, Enum):
     ACTION = "action"
     CONTROL = "control"
     EPISODE = "episode"
-    SUCCESS = "success"
 
     def __str__(self) -> str:
         return self.value
 
 
-class ControlCmd(str, Enum):
-    ESC = "ESC"
-    CTRL = "CTRL"
-    SPACE = "SPACE"
-
-    def __str__(self) -> str:
-        return self.value
+class ControlCmd(int, Enum):
+    ESC = 1
+    CTRL = 2
+    SPACE = 3
 
     @staticmethod
     def from_event(event: DoraEvent) -> "ControlCmd":

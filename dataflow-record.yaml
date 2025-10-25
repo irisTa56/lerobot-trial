@@ -16,7 +16,6 @@ nodes:
       control: keyboard/control
     outputs:
       - episode
-      - success
   - id: lerobot
     build: uv sync --frozen
     path: src/nodes/record_by_lerobot.py
@@ -24,4 +23,3 @@ nodes:
     inputs:
       control: keyboard/control
       episode: gym-hil/episode
-      success: gym-hil/success

@@ -66,9 +66,6 @@ class GymClient:
                     action, observation = episode_frame_from_event(event)
                     self._latest_action = action
                     self._latest_observation = observation
-                case ("INPUT", ChannelId.SUCCESS):
-                    logger.info("Received episode success event.")
-                    lerobot_control_events[ControlEventKey.EXIT_EARLY] = True
                 case ("STOP", _):
                     logging.info("Received stop signal from Dora.")
                 case _:

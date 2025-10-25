@@ -80,18 +80,21 @@ The following key bindings are available to control data recording:
 - *Esc* to stop data recording and exit
 - *Ctrl* to break the current episode for re-recording
 - *Space* to finish the current episode or reset the environment
-  - Note that episodes will finish automatically when the task is completed.
 
 Note that these control key bindings differ from the original LeRobot keyboard controls to avoid conflicts.
 
 Typical recording scenarios include:
 
 1. Execute `dora run dataflow-record.yaml`
+   - MuJoCo window and supplementary Rerun window will open
 2. Perform teleoperation to complete the task (e.g., pick up a cube)
-3. When the task is completed, the episode finishes automatically
-4. LeRobot script enters a resetting phase, which is not recorded
-5. Press *Space* to reset the environment (finish the resetting phase)
-6. Repeat from step 2 until the desired number of episodes is recorded
+3. The robot will freeze when the task is completed
+4. Press *Space* to finish the episode
+5. LeRobot enters a resetting phase, which is not recorded
+6. Press *Space* to reset the environment (finish the resetting phase)
+7. Repeat from step 2 until the desired number of episodes is recorded
+
+Note that between 3 and 4, the last received frame is recorded repeatedly.
 
 As a reference, the dataflow defined in `dataflow-record.yaml` is as follows:
 
@@ -112,7 +115,6 @@ flowchart TB
   dora/timer/millis/100 -- tick --> keyboard
   keyboard -- control --> lerobot
   gym-hil -- episode --> lerobot
-  gym-hil -- success --> lerobot
 ```
 
 ## Development

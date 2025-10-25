@@ -92,10 +92,10 @@ The system uses a tick-based dataflow architecture with multiple nodes communica
 2. **gym-hil node** ([run_gym_hil.py](src/nodes/run_gym_hil.py)):
    - Manages the Gym-HIL simulation environment with absolute position control wrapper
    - Receives actions from keyboard node at 10 Hz
-   - Steps the environment immediately upon receiving each action
+   - Steps the environment immediately upon receiving each action in BEFORE_DONE state
    - Publishes episode frames (action + observation) on the `episode` channel
-   - Publishes success signal on the `success` channel when episode terminates
-   - Handles control commands: ESC to exit, CTRL to break episode, SPACE to reset environment
+   - Uses a state machine with three states: BEFORE_DONE, AFTER_DONE, RESETTING
+   - Handles control commands: ESC to exit, SPACE to transition between states (finish episode → reset environment)
 
 3. **lerobot node** ([record_by_lerobot.py](src/nodes/record_by_lerobot.py)) (recording mode only):
    - Receives episode frames from gym-hil node and records them using LeRobot's recording infrastructure
@@ -105,7 +105,7 @@ The system uses a tick-based dataflow architecture with multiple nodes communica
 ### Key Components
 
 - **[config.py](src/lerobot_trial/config.py)**: Shared configuration, particularly `control_dt` (0.1s) which must match the Dora timer interval
-- **[dora_ch.py](src/lerobot_trial/dora_ch.py)**: Utilities for Dora channel communication using PyArrow, including `ChannelId` enum (ACTION, CONTROL, EPISODE, SUCCESS) and `ControlCmd` enum (ESC, CTRL, SPACE)
+- **[dora_ch.py](src/lerobot_trial/dora_ch.py)**: Utilities for Dora channel communication using PyArrow, including `ChannelId` enum (ACTION, CONTROL, EPISODE) and `ControlCmd` int enum (ESC=1, CTRL=2, SPACE=3)
 - **[gym_hil.py](src/lerobot_trial/gym_hil.py)**: Environment setup, action conversion utilities, and the `AbsolutePositionControl` wrapper that converts absolute position commands to delta actions by tracking the mocap position
 - **[gym_client.py](src/lerobot_trial/gym_client.py)**: Dora event stream client for consuming gym-hil outputs (`DoraEventStreamClosed` exception)
 - **[gym_utils.py](src/lerobot_trial/gym_utils.py)**: Utilities for converting episode frames to/from Dora messages
@@ -139,8 +139,8 @@ Actions are converted to 7D environment arrays in `action_to_env_array()`:
 **Control keys** (for recording workflow):
 
 - **Esc**: Stop data recording and exit
-- **Ctrl**: Break the current episode for re-recording
-- **Space**: Finish the current episode or reset the environment
+- **Ctrl**: Transition to resetting phase (used to break and re-record an episode)
+- **Space**: Finish the current episode or reset the environment (transitions through state machine)
 
 Note: Control key bindings differ from the original LeRobot keyboard controls to avoid conflicts.
 
@@ -150,23 +150,28 @@ When using [dataflow-record.yaml](dataflow-record.yaml) for dataset recording:
 
 1. Execute `dora run dataflow-record.yaml`
 2. Perform teleoperation to complete the task (e.g., pick up a cube)
-3. When the task is completed, the episode finishes automatically
-4. LeRobot script enters a resetting phase, which is not recorded
-5. Press **Space** to reset the environment (finish the resetting phase)
-6. Repeat from step 2 until the desired number of episodes is recorded
+3. The robot will freeze when the task is completed (gym-hil enters AFTER_DONE state)
+4. Press **Space** to finish the episode (gym-hil enters RESETTING state)
+5. LeRobot enters a resetting phase, which is not recorded
+6. Press **Space** to reset the environment and finish the resetting phase (gym-hil returns to BEFORE_DONE state)
+7. Repeat from step 2 until the desired number of episodes is recorded
+
+Note: Between steps 3 and 4, the last received frame is recorded repeatedly.
 
 The control commands enable flexible recording workflow:
 
-- Use **Ctrl** to break and re-record an episode if a mistake is made
+- Use **Ctrl** to transition to resetting phase and re-record an episode if a mistake is made
 - Use **Esc** to stop recording and exit when done
 
 ## Important Constraints
 
 - `control_dt` in [config.py](src/lerobot_trial/config.py) MUST match the tick interval in [dataflow-demo.yaml](dataflow-demo.yaml) and [dataflow-record.yaml](dataflow-record.yaml) (all 100ms)
 - The keyboard node receives tick events at 10 Hz and publishes actions on each tick
-- The gym-hil node steps the environment immediately upon receiving each action (no separate timer)
-- In recording mode, gym-hil publishes episode frames after each step and success signals on episode completion
+- The gym-hil node steps the environment immediately upon receiving each action only in BEFORE_DONE state
+- The gym-hil node uses a state machine (BEFORE_DONE → AFTER_DONE → RESETTING → BEFORE_DONE) to manage episode lifecycle
+- In recording mode, gym-hil publishes episode frames after each step (no separate success channel)
 - The keyboard node uses thread locking when accessing the Dora node due to concurrent keyboard events
 - Control commands (ESC, CTRL, SPACE) reset the action state to prevent unintended movement after control operations
+- `ControlCmd` is an int enum (not str) with values: ESC=1, CTRL=2, SPACE=3
 - Type checking is strict (`mypy --strict`)
 - Ruff enforces import sorting (extend-select = ["I"])
