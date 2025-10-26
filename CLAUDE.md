@@ -71,6 +71,15 @@ DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-dataset-viz \
   --repo-id "example/gym_hil_trial" \
   --root "outputs/record/gym_hil_trial" \
   --episode-index 0
+
+# Delete specific episodes from the recorded dataset
+python scripts/delete_episodes.py \
+  --repo_id "example/gym_hil_trial" \
+  --root "outputs/record/gym_hil_trial" \
+  --episode_indices "[41,42]"
+
+# Resume recording to recover deleted episodes
+RESUME_RECORDING=1 dora run dataflow-record.yaml
 ```
 
 For training a policy using the recorded dataset:
@@ -110,10 +119,12 @@ The system uses a tick-based dataflow architecture with multiple nodes communica
    - Manages the Gym-HIL simulation environment with absolute position control wrapper
    - Receives tick events from Dora timer at 10 Hz and steps the environment on each tick (only in BEFORE_DONE state)
    - Receives actions from keyboard node (teleoperation mode) or lerobot node (evaluation mode)
+   - Discards the first action after reset to ignore lingering user inputs
    - Steps the environment based on tick input rather than action input to enable asynchronous communication (essential for avoiding deadlocks when controlled by lerobot node)
    - Publishes step input/output pairs (action at t, observation at t+1) on the `episode` channel using `step_io_to_message()`
    - Uses a state machine with three states: BEFORE_DONE, AFTER_DONE, RESETTING
    - Handles control commands: ESC to exit, SPACE to transition between states (finish episode → reset environment)
+   - Implements delayed reset (10 ticks countdown) to prevent post-reset frames from being recorded
 
 3. **lerobot node** ([record_by_lerobot.py](src/nodes/record_by_lerobot.py)) (recording/evaluation mode):
    - In recording mode: Receives step input/output pairs from gym-hil node and records them using LeRobot's recording infrastructure
@@ -122,12 +133,13 @@ The system uses a tick-based dataflow architecture with multiple nodes communica
    - Uses `GymClient.get_observation(synchronized=False)` during policy execution to get the latest observation (observation at time t+1)
    - Handles control commands to manage recording/evaluation workflow
    - Publishes actions via `GymClient.send_action()` in evaluation mode
+   - Supports resuming previous recordings via `RESUME_RECORDING` environment variable, which calculates remaining episodes and sets the resume flag
 
 ### Key Components
 
 - **[config.py](src/lerobot_trial/config.py)**: Shared configuration, particularly `control_dt` (0.1s) which must match the Dora timer interval
 - **[dora_ch.py](src/lerobot_trial/dora_ch.py)**: Utilities for Dora channel communication using PyArrow, including `ChannelId` enum (ACTION, CONTROL, EPISODE) and `ControlCmd` int enum (ESC=1, CTRL=2, SPACE=3)
-- **[gym_hil.py](src/lerobot_trial/gym_hil.py)**: Environment setup, action conversion utilities, and the `AbsolutePositionControl` wrapper that converts absolute position commands to delta actions by tracking the mocap position. Contains `make_action_array()` to convert action dictionaries to 7D environment arrays.
+- **[gym_hil.py](src/lerobot_trial/gym_hil.py)**: Environment setup, action conversion utilities, and the `AbsolutePositionControl` wrapper that converts absolute position commands to delta actions by tracking the mocap position. Also applies gripper control transformation (maps [0, 1] to [-1, 1] where 0 becomes open command, mimicking absolute control where 1 must be held to stay closed). Contains `make_action_array()` to convert action dictionaries to 7D environment arrays.
 - **[gym_client.py](src/lerobot_trial/gym_client.py)**: Dora event stream client for consuming gym-hil outputs. Tracks temporal alignment of actions and observations: action at time t, observation at time t (synchronized with action), and observation at time t+1 (result of applying action). Provides `get_observation(synchronized=True/False)` to choose between temporally aligned observations. Provides `send_action()` to publish actions to gym-hil node in evaluation mode.
 - **[gym_utils.py](src/lerobot_trial/gym_utils.py)**: Utilities for converting step input/output pairs (action at t, observation at t+1) to/from Dora messages using `step_io_to_message()` and `step_io_from_event()`
 - **[lerobot_control_events.py](src/lerobot_trial/lerobot_control_events.py)**: Control event handling for LeRobot recording workflow
@@ -135,19 +147,21 @@ The system uses a tick-based dataflow architecture with multiple nodes communica
   - **[base_robot.py](src/lerobot_trial/hw_impl/base_robot.py)**: `BaseRobot` accepts `action_mode` parameter (ActionMode.TELEOP or ActionMode.POLICY) to control observation synchronization and action publishing behavior
   - **[gym_hil_recorder.py](src/lerobot_trial/hw_impl/gym_hil_recorder.py)**: `GymHILRecorderRobot` (uses `action_mode=ActionMode.TELEOP`) and `GymHILRecorderTeleop` implementations for LeRobot recording
   - **[gym_hil_evaluator.py](src/lerobot_trial/hw_impl/gym_hil_evaluator.py)**: `GymHILEvaluatorRobot` (uses `action_mode=ActionMode.POLICY`) implementation for policy evaluation
+- **[scripts/delete_episodes.py](scripts/delete_episodes.py)**: Utility script to delete specific episodes from a recorded dataset. Creates a backup of the original dataset and uses LeRobot's `delete_episodes()` function.
 
 ### Action Space and Control
 
 The action dictionary uses 4 dimensions (see `ActionDim` enum):
 
 - `x`, `y`, `z`: Absolute Cartesian positions (accumulated from key presses at 0.005 units per tick)
-- `gripper`: Gripper state (1.0 for open, -1.0 for close, 0.0 for neutral)
+- `gripper`: Gripper state (1.0 for closed, 0.0 for open)
 
 The `AbsolutePositionControl` wrapper in [gym_hil.py](src/lerobot_trial/gym_hil.py) converts these absolute positions to delta actions by:
 
 1. Storing the initial position on reset as the origin
 2. On each step, calculating the delta from the current position to the target position
-3. Passing the delta action to the underlying environment
+3. Transforming gripper control: maps [0, 1] to [-1, 1] where 0 becomes open command (mimicking absolute control where 1 must be held to stay closed)
+4. Passing the delta action to the underlying environment
 
 Actions are converted to 7D environment arrays in `make_action_array()`:
 `[x, y, z, 0, 0, 0, gripper]` (no orientation control)
@@ -158,13 +172,13 @@ Actions are converted to 7D environment arrays in `make_action_array()`:
 
 - Arrow keys: X/Y movement (continuous while held)
 - Left/Right Shift: Z movement up/down (continuous while held)
-- Left/Right Command: Gripper control (open/close while held)
+- Left Command: Close gripper (hold to keep closed, release to open)
 
 **Control keys** (for recording workflow):
 
 - **Esc**: Stop data recording and exit
 - **Ctrl**: Transition to resetting phase (used to break and re-record an episode)
-- **Space**: Finish the current episode or reset the environment (transitions through state machine)
+- **Space**: Finish the current episode or finish a resetting phase (transitions through state machine)
 
 Note: Control key bindings differ from the original LeRobot keyboard controls to avoid conflicts.
 
@@ -172,12 +186,12 @@ Note: Control key bindings differ from the original LeRobot keyboard controls to
 
 When using [dataflow-record.yaml](dataflow-record.yaml) for dataset recording:
 
-1. Execute `dora run dataflow-record.yaml`
+1. Execute `dora run dataflow-record.yaml` (or `RESUME_RECORDING=1 dora run dataflow-record.yaml` to resume from a previous recording)
 2. Perform teleoperation to complete the task (e.g., pick up a cube)
 3. The robot will freeze when the task is completed (gym-hil enters AFTER_DONE state)
-4. Press **Space** to finish the episode (gym-hil enters RESETTING state)
-5. LeRobot enters a resetting phase, which is not recorded
-6. Press **Space** to reset the environment and finish the resetting phase (gym-hil returns to BEFORE_DONE state)
+4. Press **Space** to finish the current episode (gym-hil enters RESETTING state)
+5. Automatically enters a resetting phase, which is not recorded
+6. Press **Space** to finish the resetting phase and start a new episode (gym-hil returns to BEFORE_DONE state)
 7. Repeat from step 2 until the desired number of episodes is recorded
 
 Note: Between steps 3 and 4, the last received frame is recorded repeatedly.
@@ -195,6 +209,7 @@ The control commands enable flexible recording workflow:
 - The gym-hil node receives actions asynchronously from keyboard node (teleoperation) or lerobot node (evaluation)
 - Tick-based stepping enables asynchronous communication between controller and simulator, essential for avoiding deadlocks when controlled by lerobot node
 - The gym-hil node uses a state machine (BEFORE_DONE → AFTER_DONE → RESETTING → BEFORE_DONE) to manage episode lifecycle
+- The gym-hil node discards the first action after reset and implements a 10-tick countdown before executing the reset to prevent recording artifacts
 - In recording/evaluation mode, gym-hil publishes step input/output pairs (action at t, observation at t+1) after each step
 - GymClient maintains temporal alignment: `_last_action` (action at t), `_last_observation` (observation at t), `_updated_observation` (observation at t+1)
 - During teleoperation (ActionMode.TELEOP), use `get_observation(synchronized=True)` to get observation at time t; for policy execution (ActionMode.POLICY), use `get_observation(synchronized=False)` to get the latest observation at time t+1
@@ -202,6 +217,9 @@ The control commands enable flexible recording workflow:
 - The keyboard node uses thread locking when accessing the Dora node due to concurrent keyboard events
 - Control commands (ESC, CTRL, SPACE) reset the action state to prevent unintended movement after control operations
 - `ControlCmd` is an int enum (not str) with values: ESC=1, CTRL=2, SPACE=3
+- Gripper control: keyboard node publishes values in [0, 1] range (1 for closed, 0 for open); AbsolutePositionControl wrapper transforms this to [-1, 1] for the environment
+- Recording can be resumed using `RESUME_RECORDING=1` environment variable, which calculates remaining episodes from the existing dataset
+- Use [scripts/delete_episodes.py](scripts/delete_episodes.py) to remove specific episodes from a dataset, which creates a backup before deletion
 - Configuration files are located in [configs/](configs/) directory (not examples/)
 - Type checking is strict (`mypy --strict`)
 - Ruff enforces import sorting (extend-select = ["I"])
