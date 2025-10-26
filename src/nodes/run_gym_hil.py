@@ -27,10 +27,13 @@ def main() -> None:
     node = Node()
 
     env = make_env(headless=False)
-    _obs, _info = env.reset()
-    state = State.BEFORE_DONE
 
+    _obs, _info = env.reset()
     action = init_action()
+    countdown_to_reset = None
+
+    state = State.BEFORE_DONE
+    action_recv_count = 0
 
     for event in node:
         match (event["type"], event.get("id")):
@@ -44,34 +47,48 @@ def main() -> None:
 
                 logging.debug(f"Step took {time.perf_counter() - start:.4f} secs.")
 
-                if terminated or truncated:
+                if state == State.BEFORE_DONE and (terminated or truncated):
                     logging.info(f"Done: {terminated=}, {truncated=}")
                     state = State.AFTER_DONE
+
+                if countdown_to_reset is not None:
+                    countdown_to_reset -= 1
 
             case ("INPUT", ChannelId.ACTION):
                 if state != State.BEFORE_DONE:
                     continue
 
-                action = parse_single_value_in_event(event)
+                # Discard the first action after reset to ignore lingering user inputs.
+                if action_recv_count > 0:
+                    action = parse_single_value_in_event(event)
+
+                action_recv_count += 1
 
             case ("INPUT", ChannelId.CONTROL):
-                control = ControlCmd.from_event(event)
-
-                if control == ControlCmd.ESC:
+                if ControlCmd.from_event(event) == ControlCmd.ESC:
                     logging.info("Closing environment...")
                     break
-                elif state == State.RESETTING:
+
+                if state == State.RESETTING:
                     logging.info("Entering the next episode...")
-                    _obs, _info = env.reset()
                     state = State.BEFORE_DONE
+                    action_recv_count = 0
                 else:
                     logging.info("Entering resetting phase...")
                     state = State.RESETTING
+                    # Delay the reset to prevent post-reset frames from being recorded.
+                    countdown_to_reset = 10
 
             case ("STOP", _):
                 logging.info("Received stop signal from Dora.")
             case _:
                 logging.warning(f"Unknown event: {event}")
+
+        if countdown_to_reset == 0:
+            logging.info("Resetting environment...")
+            _obs, _info = env.reset()
+            action = init_action()
+            countdown_to_reset = None
 
     env.close()
 

@@ -1,7 +1,9 @@
 import logging
+import os
 
 import lerobot.scripts.lerobot_record as lsr
 from lerobot.configs import parser
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.scripts.lerobot_record import RecordConfig, record
 from lerobot.utils.utils import init_logging
 
@@ -13,6 +15,13 @@ from lerobot_trial import COMMON_CONFIG, DoraEventStreamClosed, lerobot_control_
 def main(cfg: RecordConfig) -> None:
     init_logging()
     logging.info("Starting LeRobot node...")
+
+    if os.environ.get("RESUME_RECORDING"):
+        logging.info("Resuming previous recording...")
+        dataset = LeRobotDataset(repo_id=cfg.dataset.repo_id, root=cfg.dataset.root)
+        remaining_episodes = cfg.dataset.num_episodes - dataset.num_episodes
+        cfg.dataset.num_episodes = max(0, remaining_episodes)
+        cfg.resume = True
 
     # Adjust config values based on common settings.
     if cfg.dataset.fps != COMMON_CONFIG.fps:
