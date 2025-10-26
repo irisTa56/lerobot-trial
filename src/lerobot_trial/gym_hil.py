@@ -75,7 +75,7 @@ def make_env(headless: bool) -> MujocoGymEnv:
     return AbsolutePositionControl(env)
 
 
-def action_to_env_array(action: dict[ActionDim, float]) -> NDArray[np.floating]:
+def make_action_array(action: dict[ActionDim, float]) -> NDArray[np.floating]:
     env_action = [
         action[ActionDim.X],
         action[ActionDim.Y],

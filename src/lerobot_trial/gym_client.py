@@ -9,6 +9,7 @@ from .dora_ch import (
     ChannelId,
     ControlCmd,
     is_timeout_event,
+    make_dict_message,
     try_recv_event,
 )
 from .gym_utils import step_io_from_event
@@ -46,6 +47,7 @@ class GymClient:
         if not self.is_connected():
             raise DeviceNotConnectedError("GymClient is not connected.")
 
+        # Use data received at the same time as the latest observation.
         return self._last_action  # type: ignore[return-value]
 
     def get_observation(self, synchronized: bool = False) -> dict[str, Any]:
@@ -61,6 +63,10 @@ class GymClient:
 
         self._try_handle_event()
         return self._last_observation if synchronized else self._updated_observation  # type: ignore[return-value]
+
+    def send_action(self, action: dict[str, float]) -> None:
+        message = make_dict_message(action)
+        self._node.send_output(ChannelId.ACTION, message)
 
     def is_connected(self) -> bool:
         return (

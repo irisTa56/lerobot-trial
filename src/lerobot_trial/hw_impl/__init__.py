@@ -1,5 +1,9 @@
 """Implementations of LeRobot's hardware interface."""
 
+from .gym_hil_evaluator import (
+    GymHILEvaluatorRobot,
+    GymHILEvaluatorRobotConfig,
+)
 from .gym_hil_recorder import (
     GymHILRecorderRobot,
     GymHILRecorderRobotConfig,
@@ -8,6 +12,8 @@ from .gym_hil_recorder import (
 )
 
 __all__ = [
+    "GymHILEvaluatorRobot",
+    "GymHILEvaluatorRobotConfig",
     "GymHILRecorderRobot",
     "GymHILRecorderRobotConfig",
     "GymHILRecorderTeleop",

@@ -4,7 +4,7 @@ from lerobot.robots import RobotConfig
 from lerobot.teleoperators import TeleoperatorConfig
 
 from ..gym_hil import ActionDim, make_env
-from .base_robot import BaseRobot
+from .base_robot import ActionMode, BaseRobot
 from .base_teleop import BaseTeleop
 from .common import PolicyFeature
 
@@ -21,7 +21,7 @@ class GymHILRecorderRobot(BaseRobot):
 
     def __init__(self, config: GymHILRecorderRobotConfig) -> None:
         env = make_env(headless=True)
-        super().__init__(config, env=env, with_teleop=True)
+        super().__init__(config, env=env, action_mode=ActionMode.TELEOP)
         env.close()
 
     @property

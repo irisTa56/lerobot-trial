@@ -47,16 +47,18 @@ As a reference, the dataflow defined in `dataflow-demo.yaml` is as follows:
 flowchart TB
   gym-hil[/"**gym-hil**"\]
   keyboard["**keyboard**"]
-
   subgraph ___dora___ [dora]
     subgraph ___timer_timer___ [timer]
       dora/timer/millis/100[\millis/100/]
     end
   end
-
   keyboard -- action --> gym-hil
+  dora/timer/millis/100 -- tick --> gym-hil
   dora/timer/millis/100 -- tick --> keyboard
 ```
+
+The simulation in the `gym-hil` node steps based on `tick` input rather than `action` input from the `keyboard` node.
+This enables asynchronous communication between the controller and simulator, which is essential to avoid deadlocks when the `lerobot` node acts as the controller (see below).
 
 ## Record Dataset
 
@@ -104,15 +106,14 @@ flowchart TB
   gym-hil["**gym-hil**"]
   keyboard["**keyboard**"]
   lerobot[/"**lerobot**"\]
-
   subgraph ___dora___ [dora]
     subgraph ___timer_timer___ [timer]
       dora/timer/millis/100[\millis/100/]
     end
   end
-
   keyboard -- action --> gym-hil
   keyboard -- control --> gym-hil
+  dora/timer/millis/100 -- tick --> gym-hil
   dora/timer/millis/100 -- tick --> keyboard
   keyboard -- control --> lerobot
   gym-hil -- episode --> lerobot
@@ -124,7 +125,38 @@ To train a policy using the recorded dataset, run:
 
 ```shell
 $ DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-train \
-  --config_path examples/config_gym_hil_train.json
+  --config_path configs/example_gym_hil_train.json
+```
+
+## Evaluate Policy
+
+To evaluate a trained policy, run the dataflow defined in `dataflow-eval.yaml`:
+
+```shell
+# Optional: clear previous records if needed
+rm -rf outputs/eval/gym_hil_trial
+
+dora run dataflow-eval.yaml
+```
+
+As a reference, the dataflow defined in `dataflow-eval.yaml` is as follows:
+
+```mermaid
+flowchart TB
+  gym-hil["**gym-hil**"]
+  keyboard["**keyboard**"]
+  lerobot["**lerobot**"]
+  subgraph ___dora___ [dora]
+    subgraph ___timer_timer___ [timer]
+      dora/timer/millis/100[\millis/100/]
+    end
+  end
+  lerobot -- action --> gym-hil
+  keyboard -- control --> gym-hil
+  dora/timer/millis/100 -- tick --> gym-hil
+  dora/timer/millis/100 -- tick (as keep-alive) --> keyboard
+  keyboard -- control --> lerobot
+  gym-hil -- episode --> lerobot
 ```
 
 ## Development

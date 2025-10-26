@@ -1,0 +1,13 @@
+{
+  "robot": {
+    "type": "gym_hil_evaluator"
+  },
+  "dataset": {
+    "repo_id": "example/eval_gym_hil_trial",
+    "single_task": "Pick up a cube",
+    "root": "outputs/eval/gym_hil_trial",
+    "num_episodes": 1,
+    "push_to_hub": false
+  },
+  "display_data": true
+}

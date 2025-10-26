@@ -11,4 +11,5 @@ nodes:
     path: with_mujoco_on_mac.sh
     args: src/nodes/run_gym_hil.py
     inputs:
+      tick: dora/timer/millis/100
       action: keyboard/action

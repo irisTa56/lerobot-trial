@@ -5,7 +5,6 @@ nodes:
     inputs:
       tick: dora/timer/millis/100
     outputs:
-      - action
       - control
   - id: gym-hil
     build: uv sync --frozen
@@ -13,14 +12,18 @@ nodes:
     args: src/nodes/run_gym_hil.py
     inputs:
       tick: dora/timer/millis/100
-      action: keyboard/action
+      action: lerobot/action
       control: keyboard/control
     outputs:
       - episode
   - id: lerobot
     build: uv sync --frozen
     path: src/nodes/record_by_lerobot.py
-    args: --config_path configs/example_gym_hil_record.json
+    args: |
+      --config_path configs/example_gym_hil_eval.json
+      --policy.path=outputs/train/gym_hil_trial/checkpoints/last/pretrained_model
     inputs:
       control: keyboard/control
       episode: gym-hil/episode
+    outputs:
+      - action

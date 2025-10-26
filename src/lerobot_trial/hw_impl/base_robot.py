@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Any
 
 import gymnasium as gym
@@ -12,12 +13,17 @@ from ..gym_client import GymClient
 from .common import PolicyFeature
 
 
+class ActionMode(int, Enum):
+    TELEOP = 0
+    POLICY = 1
+
+
 class BaseRobot(Robot):  # type: ignore[misc]
     def __init__(
         self,
         config: RobotConfig,
         env: gym.Env,  # type: ignore[type-arg]
-        with_teleop: bool = False,
+        action_mode: ActionMode,
     ) -> None:
         super().__init__(config)
         self._client = GymClient()
@@ -33,7 +39,7 @@ class BaseRobot(Robot):  # type: ignore[misc]
             if _is_visual_feature(v)
         }
 
-        self._with_teleop = with_teleop
+        self._action_mode = action_mode
 
     @property
     def observation_features(self) -> dict[str, PolicyFeature]:
@@ -44,10 +50,13 @@ class BaseRobot(Robot):  # type: ignore[misc]
         raise NotImplementedError("Action features are not defined for BaseRobot.")
 
     def get_observation(self) -> RobotObservation:
-        env_observation = self._client.get_observation(synchronized=self._with_teleop)
+        synchronized = self._action_mode == ActionMode.TELEOP
+        env_observation = self._client.get_observation(synchronized=synchronized)
         return _make_observations(env_observation)
 
     def send_action(self, action: RobotAction) -> RobotAction:
+        if self._action_mode == ActionMode.POLICY:
+            self._client.send_action(action)
         return action
 
     @property
