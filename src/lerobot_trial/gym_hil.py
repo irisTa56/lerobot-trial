@@ -39,6 +39,10 @@ class AbsolutePositionControl(gym.Wrapper):  # type: ignore[type-arg]
     ) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
         current_xyz = self._get_xyz() - self._origin_xyz
         action[:3] -= current_xyz
+        # Map from [0, 1] to [-1, 1] where 0 becomes open command.
+        # This mimics absolute position control as 1 must be held to stay closed.
+        pseudo_grasp = 2 * action[6] - 1.0
+        action[6] = pseudo_grasp
         return self.env.step(action)
 
     def _get_xyz(self) -> NDArray[np.floating]:

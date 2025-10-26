@@ -58,10 +58,8 @@ class ActionState:
             self._pressed_negative[ActionDim.Z] = pressed
         elif key == Key.shift_r:
             self._pressed_positive[ActionDim.Z] = pressed
-        elif key == Key.cmd_r:
+        elif key == Key.cmd:
             self._state[ActionDim.GRIPPER] = 1.0 if pressed else 0.0
-        elif key == Key.cmd_l:
-            self._state[ActionDim.GRIPPER] = -1.0 if pressed else 0.0
 
     def tick_to_message(self) -> pa.Array:
         # Increment x, y, z for absolute position control.

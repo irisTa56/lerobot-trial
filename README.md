@@ -39,7 +39,7 @@ For controlling the robot, use:
 
 - *Arrow keys* to move in X-Y plane
 - *Left and Right Shift* to move in Z axis
-- *Left and Right Cmd* to open and close gripper
+- *Left Cmd* to close gripper, release to open
 
 As a reference, the dataflow defined in `dataflow-demo.yaml` is as follows:
 
@@ -136,6 +136,8 @@ To train a policy using the recorded dataset, run:
 $ DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-train \
   --config_path configs/example_gym_hil_train.json
 ```
+
+This training took ~3.5 hours on my MacBook Pro (M3 Pro, 36GB RAM).
 
 ## Evaluate Policy
 
