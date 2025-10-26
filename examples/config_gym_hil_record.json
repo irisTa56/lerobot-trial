@@ -6,10 +6,10 @@
     "type": "gym_hil_recorder"
   },
   "dataset": {
-    "repo_id": "record/gym_hil_trial",
+    "repo_id": "example/gym_hil_trial",
     "single_task": "Pick up a cube",
     "root": "outputs/record/gym_hil_trial",
-    "num_episodes": 30,
+    "num_episodes": 50,
     "push_to_hub": false
   },
   "display_data": true

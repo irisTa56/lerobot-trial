@@ -1,0 +1,19 @@
+{
+  "dataset": {
+    "repo_id": "example/gym_hil_trial",
+    "root": "outputs/record/gym_hil_trial"
+  },
+  "policy": {
+    "repo_id": "example/gym_hil_trial_act",
+    "type": "act",
+    "chunk_size": 50,
+    "n_action_steps": 50,
+    "device": "mps",
+    "push_to_hub": false
+  },
+  "output_dir": "outputs/train/gym_hil_trial",
+  "steps": 100000,
+  "wandb": {
+    "enable": false
+  }
+}

@@ -71,7 +71,7 @@ dora run dataflow-record.yaml
 
 # Visualize recorded dataset using Rerun
 DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-dataset-viz \
-  --repo-id "record/gym_hil_trial" \
+  --repo-id "example/gym_hil_trial" \
   --root "outputs/record/gym_hil_trial" \
   --episode-index 0
 ```
@@ -116,6 +116,15 @@ flowchart TB
   dora/timer/millis/100 -- tick --> keyboard
   keyboard -- control --> lerobot
   gym-hil -- episode --> lerobot
+```
+
+## Train Policy
+
+To train a policy using the recorded dataset, run:
+
+```shell
+$ DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-train \
+  --config_path examples/config_gym_hil_train.json
 ```
 
 ## Development

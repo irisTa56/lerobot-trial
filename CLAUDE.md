@@ -68,7 +68,7 @@ dora run dataflow-record.yaml
 
 # Visualize recorded dataset using Rerun
 DYLD_LIBRARY_PATH="$(brew --prefix ffmpeg@7)/lib" lerobot-dataset-viz \
-  --repo-id "record/gym_hil_trial" \
+  --repo-id "example/gym_hil_trial" \
   --root "outputs/record/gym_hil_trial" \
   --episode-index 0
 ```
