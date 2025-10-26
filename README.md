@@ -128,6 +128,8 @@ flowchart TB
   gym-hil -- episode --> lerobot
 ```
 
+Messages on the `episode` channel contain both action and observation data for each timestep, which are recorded by the `lerobot` node.
+
 ## Train Policy
 
 To train a policy using the recorded dataset, run:
