@@ -21,7 +21,7 @@ class GymHILRecorderRobot(BaseRobot):
 
     def __init__(self, config: GymHILRecorderRobotConfig) -> None:
         env = make_env(headless=True)
-        super().__init__(config, env=env)
+        super().__init__(config, env=env, with_teleop=True)
         env.close()
 
     @property
@@ -43,3 +43,12 @@ class GymHILRecorderTeleopConfig(TeleoperatorConfig):  # type: ignore[misc]
 class GymHILRecorderTeleop(BaseTeleop):
     config_class = GymHILRecorderTeleopConfig
     name = "gym_hil_recorder"
+
+    @property
+    def action_features(self) -> dict[str, PolicyFeature]:
+        return {
+            ActionDim.X: float,
+            ActionDim.Y: float,
+            ActionDim.Z: float,
+            ActionDim.GRIPPER: float,
+        }

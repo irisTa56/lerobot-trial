@@ -93,12 +93,13 @@ The system uses a tick-based dataflow architecture with multiple nodes communica
    - Manages the Gym-HIL simulation environment with absolute position control wrapper
    - Receives actions from keyboard node at 10 Hz
    - Steps the environment immediately upon receiving each action in BEFORE_DONE state
-   - Publishes episode frames (action + observation) on the `episode` channel
+   - Publishes step input/output pairs (action at t, observation at t+1) on the `episode` channel using `step_io_to_message()`
    - Uses a state machine with three states: BEFORE_DONE, AFTER_DONE, RESETTING
    - Handles control commands: ESC to exit, SPACE to transition between states (finish episode → reset environment)
 
 3. **lerobot node** ([record_by_lerobot.py](src/nodes/record_by_lerobot.py)) (recording mode only):
-   - Receives episode frames from gym-hil node and records them using LeRobot's recording infrastructure
+   - Receives step input/output pairs from gym-hil node and records them using LeRobot's recording infrastructure
+   - Uses `GymClient.get_observation(synchronized=True)` during teleoperation to retrieve temporally aligned observations (observation at time t, synchronized with action at time t)
    - Handles control commands to manage recording workflow (start, stop, break episode)
    - Manages episode completion and environment reset coordination
 
@@ -107,10 +108,12 @@ The system uses a tick-based dataflow architecture with multiple nodes communica
 - **[config.py](src/lerobot_trial/config.py)**: Shared configuration, particularly `control_dt` (0.1s) which must match the Dora timer interval
 - **[dora_ch.py](src/lerobot_trial/dora_ch.py)**: Utilities for Dora channel communication using PyArrow, including `ChannelId` enum (ACTION, CONTROL, EPISODE) and `ControlCmd` int enum (ESC=1, CTRL=2, SPACE=3)
 - **[gym_hil.py](src/lerobot_trial/gym_hil.py)**: Environment setup, action conversion utilities, and the `AbsolutePositionControl` wrapper that converts absolute position commands to delta actions by tracking the mocap position
-- **[gym_client.py](src/lerobot_trial/gym_client.py)**: Dora event stream client for consuming gym-hil outputs (`DoraEventStreamClosed` exception)
-- **[gym_utils.py](src/lerobot_trial/gym_utils.py)**: Utilities for converting episode frames to/from Dora messages
+- **[gym_client.py](src/lerobot_trial/gym_client.py)**: Dora event stream client for consuming gym-hil outputs. Tracks temporal alignment of actions and observations: action at time t, observation at time t (synchronized with action), and observation at time t+1 (result of applying action). Provides `get_observation(synchronized=True/False)` to choose between temporally aligned observations.
+- **[gym_utils.py](src/lerobot_trial/gym_utils.py)**: Utilities for converting step input/output pairs (action at t, observation at t+1) to/from Dora messages using `step_io_to_message()` and `step_io_from_event()`
 - **[lerobot_control_events.py](src/lerobot_trial/lerobot_control_events.py)**: Control event handling for LeRobot recording workflow
-- **[hw_impl/](src/lerobot_trial/hw_impl/)**: Hardware implementation interfaces including base classes for robots and teleoperation, and the gym-hil recorder implementation
+- **[hw_impl/](src/lerobot_trial/hw_impl/)**: Hardware implementation interfaces including:
+  - **[base_robot.py](src/lerobot_trial/hw_impl/base_robot.py)**: `BaseRobot` accepts `with_teleop` parameter to control observation synchronization (synchronized observations for teleoperation, latest observations for policy execution)
+  - **[gym_hil_recorder.py](src/lerobot_trial/hw_impl/gym_hil_recorder.py)**: `GymHILRecorderRobot` (uses `with_teleop=True`) and `GymHILRecorderTeleop` implementations for LeRobot recording
 
 ### Action Space and Control
 
@@ -169,7 +172,9 @@ The control commands enable flexible recording workflow:
 - The keyboard node receives tick events at 10 Hz and publishes actions on each tick
 - The gym-hil node steps the environment immediately upon receiving each action only in BEFORE_DONE state
 - The gym-hil node uses a state machine (BEFORE_DONE → AFTER_DONE → RESETTING → BEFORE_DONE) to manage episode lifecycle
-- In recording mode, gym-hil publishes episode frames after each step (no separate success channel)
+- In recording mode, gym-hil publishes step input/output pairs (action at t, observation at t+1) after each step
+- GymClient maintains temporal alignment: `_last_action` (action at t), `_last_observation` (observation at t), `_updated_observation` (observation at t+1)
+- During teleoperation, use `get_observation(synchronized=True)` to get observation at time t; for policy execution, use `get_observation(synchronized=False)` to get the latest observation at time t+1
 - The keyboard node uses thread locking when accessing the Dora node due to concurrent keyboard events
 - Control commands (ESC, CTRL, SPACE) reset the action state to prevent unintended movement after control operations
 - `ControlCmd` is an int enum (not str) with values: ESC=1, CTRL=2, SPACE=3

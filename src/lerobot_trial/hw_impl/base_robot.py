@@ -13,7 +13,12 @@ from .common import PolicyFeature
 
 
 class BaseRobot(Robot):  # type: ignore[misc]
-    def __init__(self, config: RobotConfig, env: gym.Env) -> None:  # type: ignore[type-arg]
+    def __init__(
+        self,
+        config: RobotConfig,
+        env: gym.Env,  # type: ignore[type-arg]
+        with_teleop: bool = False,
+    ) -> None:
         super().__init__(config)
         self._client = GymClient()
 
@@ -28,6 +33,8 @@ class BaseRobot(Robot):  # type: ignore[misc]
             if _is_visual_feature(v)
         }
 
+        self._with_teleop = with_teleop
+
     @property
     def observation_features(self) -> dict[str, PolicyFeature]:
         return self._observation_features
@@ -37,7 +44,7 @@ class BaseRobot(Robot):  # type: ignore[misc]
         raise NotImplementedError("Action features are not defined for BaseRobot.")
 
     def get_observation(self) -> RobotObservation:
-        env_observation = self._client.get_observation()
+        env_observation = self._client.get_observation(synchronized=self._with_teleop)
         return _make_observations(env_observation)
 
     def send_action(self, action: RobotAction) -> RobotAction:

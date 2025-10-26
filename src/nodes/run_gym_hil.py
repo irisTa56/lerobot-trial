@@ -11,7 +11,7 @@ from lerobot_trial.dora_ch import (
     parse_single_value_in_event,
 )
 from lerobot_trial.gym_hil import action_to_env_array, init_action, make_env
-from lerobot_trial.gym_utils import episode_frame_to_message
+from lerobot_trial.gym_utils import step_io_to_message
 
 
 class State(int, Enum):
@@ -42,7 +42,7 @@ def main() -> None:
                 action = parse_single_value_in_event(event)
                 env_action = action_to_env_array(action)
                 obs, _reward, terminated, truncated, _info = env.step(env_action)
-                output = episode_frame_to_message(action, obs)
+                output = step_io_to_message(action, obs)
                 node.send_output(ChannelId.EPISODE, output)
                 logging.debug(f"Step took {time.perf_counter() - start:.4f} secs.")
 
@@ -54,7 +54,7 @@ def main() -> None:
                 control = ControlCmd.from_event(event)
 
                 if control == ControlCmd.ESC:
-                    logging.info("Received ESC event. Closing environment...")
+                    logging.info("Closing environment...")
                     break
                 elif state == State.RESETTING:
                     logging.info("Entering the next episode...")

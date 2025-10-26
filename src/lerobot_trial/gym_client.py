@@ -11,7 +11,7 @@ from .dora_ch import (
     is_timeout_event,
     try_recv_event,
 )
-from .gym_utils import episode_frame_from_event
+from .gym_utils import step_io_from_event
 from .lerobot_control_events import ControlEventKey, lerobot_control_events
 
 logger = logging.getLogger(__name__)
@@ -30,30 +30,46 @@ class GymClient:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._node = Node()
+            cls._last_action: dict[str, float] | None = None  # action at t
+            cls._last_observation: dict[str, Any] | None = None  # observation at t
+            cls._updated_observation: dict[str, Any] | None = None  # observation at t+1
         return cls._instance
 
     def connect(self) -> None:
         while not self.is_connected():
-            self._try_recv()
+            self._try_handle_event()
             time.sleep(0.1)  # Prevent busy waiting
 
     def get_action(self) -> dict[str, float]:
-        if not self.is_connected():
-            raise DeviceNotConnectedError("GymClient is not connected.")
-        # Use data received at the same time as the latest observation.
-        return self._latest_action
+        """Get the latest action."""
 
-    def get_observation(self) -> dict[str, Any]:
         if not self.is_connected():
             raise DeviceNotConnectedError("GymClient is not connected.")
 
-        self._try_recv()
-        return self._latest_observation
+        return self._last_action  # type: ignore[return-value]
+
+    def get_observation(self, synchronized: bool = False) -> dict[str, Any]:
+        """Get the latest observation.
+
+        If `synchronized` is True, returns the observation corresponding
+        to the latest action (i.e., observation at time t). Otherwise, returns
+        the most recently updated observation (i.e., observation at time t+1).
+        """
+
+        if not self.is_connected():
+            raise DeviceNotConnectedError("GymClient is not connected.")
+
+        self._try_handle_event()
+        return self._last_observation if synchronized else self._updated_observation  # type: ignore[return-value]
 
     def is_connected(self) -> bool:
-        return hasattr(self, "_latest_action") and hasattr(self, "_latest_observation")
+        return (
+            self._last_action is not None
+            and self._last_observation is not None
+            and self._updated_observation is not None
+        )
 
-    def _try_recv(self) -> None:
+    def _try_handle_event(self) -> None:
         while event := try_recv_event(self._node):
             if is_timeout_event(event):
                 return
@@ -63,9 +79,10 @@ class GymClient:
                     control = ControlCmd.from_event(event)
                     self._handle_control_event(control)
                 case ("INPUT", ChannelId.EPISODE):
-                    action, observation = episode_frame_from_event(event)
-                    self._latest_action = action
-                    self._latest_observation = observation
+                    action, observation = step_io_from_event(event)
+                    self._last_action = action
+                    self._last_observation = self._updated_observation
+                    self._updated_observation = observation
                 case ("STOP", _):
                     logging.info("Received stop signal from Dora.")
                 case _:
@@ -76,13 +93,13 @@ class GymClient:
     def _handle_control_event(self, control: ControlCmd) -> None:
         match control:
             case ControlCmd.ESC:
-                logger.info("Received ESC event. Stop data recording...")
+                logger.info("Stop data recording...")
                 lerobot_control_events[ControlEventKey.EXIT_EARLY] = True
                 lerobot_control_events[ControlEventKey.STOP_RECORDING] = True
             case ControlCmd.CTRL:
-                logger.info("Received CTRL event. Rerecord the last episode...")
+                logger.info("Re-record the last episode...")
                 lerobot_control_events[ControlEventKey.EXIT_EARLY] = True
                 lerobot_control_events[ControlEventKey.RERECORD_EPISODE] = True
             case ControlCmd.SPACE:
-                logger.info("Received SPACE event. Finish environment reset...")
+                logger.info("Finish episode (or resetting phase)...")
                 lerobot_control_events[ControlEventKey.EXIT_EARLY] = True
