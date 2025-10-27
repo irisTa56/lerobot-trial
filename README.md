@@ -172,6 +172,10 @@ flowchart TB
   gym-hil -- episode --> lerobot
 ```
 
+The following screenshot shows the evaluation result:
+
+![Evaluation Result](media/eval.gif)
+
 ## Development
 
 For code quality checks, run `mise all-checks`.
