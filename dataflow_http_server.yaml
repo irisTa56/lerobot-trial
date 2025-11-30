@@ -1,0 +1,11 @@
+nodes:
+  - id: http_server
+    path: python
+    args: src/lerobot_trial/nodes/http_server.py
+    inputs:
+      tick: dora/timer/secs/1
+    outputs:
+      - request
+    env:
+      HTTP_HOST: "0.0.0.0"
+      HTTP_PORT: "8000"
