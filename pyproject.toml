@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "dora-rs-cli>=0.3.13",
-    "lerobot>=0.4.2",
+    "lerobot[aloha]>=0.4.2",
+    "pytest>=9.0.1",
     "types-requests>=2.32.4",
 ]
 
@@ -46,6 +47,9 @@ exclude = ["lerobot"]
 strict = true
 ignore_missing_imports = true
 
+[tool.pytest.ini_options]
+norecursedirs = ["lerobot"]
+
 [tool.ruff]
 extend-exclude = ["lerobot"]
 
@@ -58,7 +62,11 @@ ignore = [
   "D21",
   "E50",
   "EM1",
+  "FIX",
+  "G00",
   "INP",
+  "S10",
   "T20",
+  "TD0",
   "TRY",
 ]
