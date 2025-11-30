@@ -1,35 +1,74 @@
 [tools]
 lychee = "0.21.0"
 python = "3.12.12"
-uv = "0.9.5"
+rust = "1.91.1"
+uv = "0.9.13"
 
-[tasks.all-checks]
-description = "Run all checks"
+[tasks.pre-commit]
+description = "Run all pre-commit checks"
 depends = [
   "format-md",
-  "format-py",
   "link-check",
-  "lint-py",
-  "type-check",
+  "pre-commit-py",
+  "pre-commit-rs",
 ]
 
 [tasks.format-md]
 description = "Format markdown files"
-run = "uv run rumdl fmt"
+run = "uv run rumdl check --fix --exclude 'lerobot/**'"
+
+[tasks.link-check]
+description = "Check if links are valid"
+run = "lychee --exclude-path lerobot ."
+
+#
+# Python
+#
+
+[tasks.pre-commit-py]
+description = "Run all Python pre-commit checks"
+depends = [
+  "format-py",
+  "lint-py",
+  "typecheck",
+]
 
 [tasks.format-py]
 description = "Format Python files"
 run = "uv run ruff format"
-
-[tasks.link-check]
-description = "Check if links are valid"
-run = "lychee ."
 
 [tasks.lint-py]
 description = "Lint Python files"
 run = "uv run ruff check --fix"
 depends = ["format-py"]
 
-[tasks.type-check]
+[tasks.typecheck]
 description = "Check Python types"
 run = "uv run mypy ."
+
+#
+# Rust
+#
+
+[tasks.pre-commit-rs]
+description = "Run all Rust pre-commit checks"
+depends = [
+  "format-rs",
+  "lint-rs",
+  "test-rs",
+]
+
+[tasks.format-rs]
+description = "Format Rust files"
+run = "cargo fmt --all"
+dir = "rust"
+
+[tasks.lint-rs]
+description = "Lint Rust files"
+run = "cargo clippy --all -- -D warnings"
+dir = "rust"
+
+[tasks.test-rs]
+description = "Run Rust tests"
+run = "cargo test --all"
+dir = "rust"

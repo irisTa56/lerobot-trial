@@ -14,7 +14,7 @@ class DeleteEpisodesConfig:
     episode_indices: list[int] | None = None
 
 
-@parser.wrap()  # type: ignore[misc]
+@parser.wrap()  # type: ignore[untyped-decorator]
 def main(cfg: DeleteEpisodesConfig) -> None:
     root = Path(cfg.root)
     old_root = root.parent / (root.name + "_old")

@@ -1,5 +1,5 @@
-from .config import COMMON_CONFIG
-from .gym_client import DoraEventStreamClosed
-from .lerobot_control_events import lerobot_control_events
+from lerobot_trial._rust import hello_from_bin
 
-__all__ = ["COMMON_CONFIG", "DoraEventStreamClosed", "lerobot_control_events"]
+
+def main() -> None:
+    print(hello_from_bin())

@@ -1,5 +1,4 @@
-"""
-Script to publish trained models to HuggingFace Hub.
+"""Script to publish trained models to HuggingFace Hub.
 
 Usage:
     python scripts/publish_policy.py outputs/train/pretrained_model
@@ -15,11 +14,11 @@ from lerobot.policies.factory import get_policy_class
 
 
 def publish_model_to_hub(model_dir: Path) -> None:
-    """
-    Publish a trained model to HuggingFace Hub.
+    """Publish a trained model to HuggingFace Hub.
 
     Args:
         model_dir: Path to the directory containing the trained model files
+
     """
     model_dir = Path(model_dir)
 
