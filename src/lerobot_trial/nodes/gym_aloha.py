@@ -8,23 +8,23 @@
 
 ### Outputs
 
-- `observation.state`: Robot joint positions and velocities as flattened PyArrow array.
-  Original shape: (14,) - [left_arm(6), right_arm(6), gripper_left(1), gripper_right(1)]
-  Metadata: {"shape": "(14,)", "dtype": "float64"}
+- `observation.state`: Robot joint positions and velocities as PyArrow array.
+  Shape: (14,) - [left_arm(6), right_arm(6), gripper_left(1), gripper_right(1)]
 
-- `observation.images.top`: Top camera RGB image as flattened PyArrow array.
-  Original shape: (H, W, 3) - Height x Width x RGB channels
-  Metadata: {"shape": "(H, W, 3)", "dtype": "uint8"}
+- `observation.images.top`: Top camera RGB image as PyArrow FixedShapeTensorArray.
+  Shape: (H, W, 3) - Height x Width x RGB channels
 
-Note: All arrays are flattened for transmission. Original shape and dtype are
-preserved in the message metadata for reconstruction on the receiving end.
+Note: 1D arrays are sent as regular PyArrow arrays, while multi-dimensional arrays
+are sent as FixedShapeTensorArray to preserve their original shape.
 """
 
 import logging
 import os
 import time
+from collections.abc import Iterable
 from dataclasses import asdict
 from pprint import pformat
+from typing import Any
 
 import gym_aloha  # noqa: F401
 import gymnasium as gym
@@ -34,12 +34,35 @@ from lerobot.configs import parser
 from lerobot.envs.configs import AlohaEnv
 from lerobot.utils.utils import init_logging
 
-OBSERVATION_CHANNELS_MAP = {
-    "agent_pos": "observation.state",
-    "pixels/top": "observation.images.top",
+OBSERVATION_CHANNELS = {
+    "observation.state": lambda obs: obs["agent_pos"],
+    "observation.images.top": lambda obs: obs["pixels"]["top"],
 }
 
 logger = logging.getLogger(__name__)
+
+
+def make_env(cfg: AlohaEnv) -> gym.Env:
+    """Create Gym-ALOHA environment from configuration."""
+    return gym.make(
+        cfg.gym_id,
+        disable_env_checker=cfg.disable_env_checker,
+        **cfg.gym_kwargs,
+    )
+
+
+def observation_to_dora_outputs(
+    obs: dict[str, Any],
+) -> Iterable[tuple[str, pa.Array]]:
+    """Convert Gym observations to publishable Dora outputs."""
+    for ch, get in OBSERVATION_CHANNELS.items():
+        v = get(obs)
+        yield (
+            ch,
+            pa.array(v)
+            if v.ndim == 1
+            else pa.FixedShapeTensorArray.from_numpy_ndarray(v),
+        )
 
 
 @parser.wrap()
@@ -48,12 +71,7 @@ def main(cfg: AlohaEnv) -> None:
 
     node = Node()
 
-    env = gym.make(
-        cfg.gym_id,
-        disable_env_checker=cfg.disable_env_checker,
-        **(cfg.gym_kwargs or {}),
-    )
-
+    env = make_env(cfg)
     obs, _info = env.reset()
     action = obs["agent_pos"]
 
@@ -66,10 +84,8 @@ def main(cfg: AlohaEnv) -> None:
                 if terminated or truncated:
                     logger.info(f"Episode done: {terminated=}, {truncated=}")
 
-                for k, v in obs.items():
-                    if output_id := OBSERVATION_CHANNELS_MAP.get(k):
-                        metadata = {"shape": str(v.shape), "dtype": str(v.dtype)}
-                        node.send_output(output_id, pa.array(v.flatten()), metadata)
+                for output_id, data in observation_to_dora_outputs(obs):
+                    node.send_output(output_id, data)
 
                 logger.debug(f"Step took {time.perf_counter() - start:.4f} secs.")
 
