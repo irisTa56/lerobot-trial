@@ -74,6 +74,7 @@ def main(cfg: AlohaEnv) -> None:
     env = make_env(cfg)
     obs, _info = env.reset()
     action = obs["agent_pos"]
+    done = False
 
     for event in node:
         match (event["type"], event.get("id")):
@@ -81,8 +82,9 @@ def main(cfg: AlohaEnv) -> None:
                 start = time.perf_counter()
 
                 obs, _reward, terminated, truncated, _info = env.step(action)
-                if terminated or truncated:
+                if (terminated or truncated) and not done:
                     logger.info(f"Episode done: {terminated=}, {truncated=}")
+                    done = True
 
                 for output_id, data in observation_to_dora_outputs(obs):
                     node.send_output(output_id, data)
@@ -94,7 +96,7 @@ def main(cfg: AlohaEnv) -> None:
             case ("STOP", _):
                 logger.info("Received stop signal from Dora.")
             case _:
-                logger.warning(f"Unknown event: {event}")
+                logger.warning(f"Unexpected event: {event}")
 
 
 if __name__ == "__main__":

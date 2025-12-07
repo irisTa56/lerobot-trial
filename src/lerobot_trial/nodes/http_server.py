@@ -58,9 +58,6 @@ class UvicornServer(uvicorn.Server):
 
 
 def main() -> None:
-    """Run HTTP server as Dora node."""
-    init_logging(console_level=os.getenv("PYTHON_LOG", "INFO"))
-
     host = os.getenv("HTTP_HOST", "0.0.0.0")
     port = int(os.getenv("HTTP_PORT", "8000"))
 
@@ -78,8 +75,9 @@ def main() -> None:
                 case ("STOP", _):
                     logger.info("Received stop signal from Dora.")
                 case _:
-                    logger.warning(f"Unknown event: {event}")
+                    logger.warning(f"Unexpected event: {event}")
 
 
 if __name__ == "__main__":
+    init_logging(console_level=os.getenv("PYTHON_LOG", "INFO"))
     main()
