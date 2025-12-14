@@ -1,5 +1,5 @@
 use dora_message::id::DataId;
-use dora_node_api::{ArrowData, DoraNode, Event, arrow::array::ArrayRef};
+use dora_node_api::{ArrowData, DoraNode, Event, Metadata, Parameter, arrow::array::ArrayRef};
 use std::{
     sync::{
         Arc, Mutex,
@@ -10,7 +10,7 @@ use std::{
 
 #[derive(Debug)]
 pub(crate) struct DoraThreadsHandle {
-    recv_rx: Arc<Mutex<Receiver<(DataId, ArrowData)>>>,
+    recv_rx: Arc<Mutex<Receiver<(DataId, ArrowData, Metadata)>>>,
     recv_handle: JoinHandle<()>,
 }
 
@@ -18,13 +18,13 @@ impl DoraThreadsHandle {
     pub(crate) fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let (_node, mut events) = DoraNode::init_from_env()?;
 
-        let (recv_tx, recv_rx) = mpsc::channel::<(DataId, ArrowData)>();
+        let (recv_tx, recv_rx) = mpsc::channel();
 
         let recv_handle = thread::spawn(move || {
             while let Some(event) = events.recv() {
                 match event {
-                    Event::Input { id, data, .. } => {
-                        if let Err(e) = recv_tx.send((id, data)) {
+                    Event::Input { id, data, metadata } => {
+                        if let Err(e) = recv_tx.send((id, data, metadata)) {
                             eprintln!("Failed to send received data: {:?}", e);
                         }
                     }
@@ -40,9 +40,17 @@ impl DoraThreadsHandle {
         })
     }
 
-    pub(crate) fn try_recv(&self) -> Option<(String, ArrayRef)> {
-        let (id, data) = self.recv_rx.lock().unwrap().try_recv().ok()?;
-        Some((id.into(), data.into()))
+    pub(crate) fn try_recv(&self) -> Option<(String, ArrayRef, Vec<usize>)> {
+        let (id, data, metadata) = self.recv_rx.lock().unwrap().try_recv().ok()?;
+        let shape = metadata
+            .parameters
+            .get("shape")
+            .and_then(|param| match param {
+                Parameter::ListInt(v) => v.iter().map(|i| usize::try_from(*i).ok()).collect(),
+                _ => None,
+            })
+            .unwrap_or_else(|| vec![data.len()]);
+        Some((id.into(), data.into(), shape))
     }
 
     pub(crate) fn is_running(&self) -> bool {

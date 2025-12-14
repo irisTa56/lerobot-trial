@@ -8,14 +8,14 @@
 
 ### Outputs
 
-- `observation.state`: Robot joint positions and velocities as PyArrow array.
-  Shape: (14,) - [left_arm(6), right_arm(6), gripper_left(1), gripper_right(1)]
+- `observation.state`: Robot joint positions (`agent_pos`) as flattened PyArrow array.
+  Original shape: (14,) - [left_arm(6), right_arm(6), gripper_left(1), gripper_right(1)]
 
-- `observation.images.top`: Top camera RGB image as PyArrow FixedShapeTensorArray.
-  Shape: (H, W, 3) - Height x Width x RGB channels
+- `observation.images.top`: Top camera RGB image as flattened PyArrow array.
+  Original shape: (H, W, 3) - Height x Width x RGB channels
 
-Note: 1D arrays are sent as regular PyArrow arrays, while multi-dimensional arrays
-are sent as FixedShapeTensorArray to preserve their original shape.
+Note: All arrays are sent as flattened PyArrow arrays with their original shape
+stored in the metadata field.
 """
 
 import logging
@@ -33,6 +33,7 @@ from dora import Node
 from lerobot.configs import parser
 from lerobot.envs.configs import AlohaEnv
 from lerobot.utils.utils import init_logging
+from numpy.typing import NDArray
 
 OBSERVATION_CHANNELS = {
     "observation.state": lambda obs: obs["agent_pos"],
@@ -53,16 +54,11 @@ def make_env(cfg: AlohaEnv) -> gym.Env:
 
 def observation_to_dora_outputs(
     obs: dict[str, Any],
-) -> Iterable[tuple[str, pa.Array]]:
+) -> Iterable[tuple[str, pa.Array, dict[str, Any]]]:
     """Convert Gym observations to publishable Dora outputs."""
     for ch, get in OBSERVATION_CHANNELS.items():
-        v = get(obs)
-        yield (
-            ch,
-            pa.array(v)
-            if v.ndim == 1
-            else pa.FixedShapeTensorArray.from_numpy_ndarray(v),
-        )
+        v: NDArray = get(obs)
+        yield (ch, pa.array(v.flatten()), {"shape": list(v.shape)})
 
 
 @parser.wrap()
@@ -86,8 +82,8 @@ def main(cfg: AlohaEnv) -> None:
                     logger.info(f"Episode done: {terminated=}, {truncated=}")
                     done = True
 
-                for output_id, data in observation_to_dora_outputs(obs):
-                    node.send_output(output_id, data)
+                for output_id, data, metadata in observation_to_dora_outputs(obs):
+                    node.send_output(output_id, data, metadata)
 
                 logger.debug(f"Step took {time.perf_counter() - start:.4f} secs.")
 

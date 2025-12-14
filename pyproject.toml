@@ -67,8 +67,10 @@ ignore = [
   "FIX",
   "G00",
   "INP",
+  "PLR",
   "S10",
   "T20",
+  "TC0",
   "TD0",
   "TRY",
 ]

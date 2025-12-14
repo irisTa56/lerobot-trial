@@ -19,14 +19,6 @@ mod _rust {
         inner: DoraThreadsHandle,
     }
 
-    #[pyclass]
-    struct DoraInput {
-        #[pyo3(get)]
-        id: String,
-        #[pyo3(get)]
-        array: PyObject,
-    }
-
     #[pymethods]
     impl DoraNode {
         #[new]
@@ -38,16 +30,26 @@ mod _rust {
         }
 
         fn try_recv(&self, py: Python) -> PyArrowResult<Option<DoraInput>> {
-            let Some((id, data)) = self.inner.try_recv() else {
+            let Some((id, data, shape)) = self.inner.try_recv() else {
                 return Ok(None);
             };
 
             let array = PyArray::from_array_ref(data).to_pyarrow(py)?.into();
-            Ok(Some(DoraInput { id, array }))
+            Ok(Some(DoraInput { id, array, shape }))
         }
 
         fn is_running(&self) -> bool {
             self.inner.is_running()
         }
+    }
+
+    #[pyclass]
+    pub(crate) struct DoraInput {
+        #[pyo3(get)]
+        id: String,
+        #[pyo3(get)]
+        array: PyObject,
+        #[pyo3(get)]
+        shape: Vec<usize>,
     }
 }

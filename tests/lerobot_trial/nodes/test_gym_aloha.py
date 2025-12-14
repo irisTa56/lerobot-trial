@@ -8,6 +8,6 @@ def test_observation_to_dora_outputs() -> None:
     cfg = AlohaEnv()
     env = make_env(cfg)
     obs, _info = env.reset()
-    assert {k for k, _ in observation_to_dora_outputs(obs)} == {
+    assert {k for k, _, _ in observation_to_dora_outputs(obs)} == {
         cfg.features_map[k] for k in cfg.features if k != ACTION
     }
