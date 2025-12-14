@@ -1,7 +1,10 @@
 use rerun::{
     Image, RecordingStream, RecordingStreamBuilder, Scalars,
     datatypes::{ChannelDatatype, ColorModel, ImageFormat},
+    log::ChunkBatcherConfig,
+    sink::{FileSink, GrpcSink},
 };
+use std::path::PathBuf;
 type BoxedError = Box<dyn std::error::Error>;
 
 #[derive(Debug)]
@@ -12,8 +15,16 @@ pub(crate) struct RerunRecorder {
 impl RerunRecorder {
     const APP_NAME: &str = "lerobot_trial";
 
-    pub(crate) fn new() -> Result<Self, BoxedError> {
-        let rec = RecordingStreamBuilder::new(Self::APP_NAME).connect_grpc()?;
+    pub(crate) fn new(rrd_path: Option<impl Into<PathBuf>>) -> Result<Self, BoxedError> {
+        let builder = RecordingStreamBuilder::new(Self::APP_NAME)
+            .batcher_config(ChunkBatcherConfig::LOW_LATENCY);
+
+        let rec = if let Some(path) = rrd_path {
+            builder.set_sinks((GrpcSink::default(), FileSink::new(path)?))?
+        } else {
+            builder.connect_grpc()?
+        };
+
         Ok(Self { rec })
     }
 

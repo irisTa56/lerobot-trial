@@ -32,9 +32,13 @@ def get_python_log_level() -> str:
     return os.getenv("PYTHON_LOG", "INFO").upper()
 
 
+def get_rerun_rrd_path() -> str | None:
+    return os.getenv("RERUN_RRD_PATH")
+
+
 def main() -> None:
     dora = DoraHandler()
-    rerun = RerunRecorder()
+    rerun = RerunRecorder(get_rerun_rrd_path())
     logger.info("DoraHandler and RerunRecorder initialized successfully")
 
     while dora.is_running():

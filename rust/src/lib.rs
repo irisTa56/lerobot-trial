@@ -52,8 +52,9 @@ mod _rust {
     #[pymethods]
     impl PyRerunRecorder {
         #[new]
-        fn new() -> PyResult<Self> {
-            let inner = RerunRecorder::new().map_err(|e| {
+        #[pyo3(signature = (rrd_path=None))]
+        fn new(rrd_path: Option<String>) -> PyResult<Self> {
+            let inner = RerunRecorder::new(rrd_path).map_err(|e| {
                 PyRuntimeError::new_err(format!("Failed to initialize RerunRecorder: {}", e))
             })?;
             Ok(Self { inner })
