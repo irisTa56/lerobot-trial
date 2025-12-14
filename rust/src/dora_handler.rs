@@ -8,14 +8,16 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+type BoxedError = Box<dyn std::error::Error>;
+
 #[derive(Debug)]
-pub(crate) struct DoraThreadsHandle {
+pub(crate) struct DoraHandler {
     recv_rx: Arc<Mutex<Receiver<(DataId, ArrowData, Metadata)>>>,
     recv_handle: JoinHandle<()>,
 }
 
-impl DoraThreadsHandle {
-    pub(crate) fn new() -> Result<Self, Box<dyn std::error::Error>> {
+impl DoraHandler {
+    pub(crate) fn new() -> Result<Self, BoxedError> {
         let (_node, mut events) = DoraNode::init_from_env()?;
 
         let (recv_tx, recv_rx) = mpsc::channel();

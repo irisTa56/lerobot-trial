@@ -8,10 +8,10 @@ nodes:
       - observation.state
       - observation.images.top
 
-  - id: rust_threads
+  - id: rust_binding
     build: uv sync  # Ensure building with maturin
     path: python
-    args: -m lerobot_trial.nodes.rust_threads
+    args: -m lerobot_trial.nodes.rust_binding
     inputs:
       state: gym_aloha/observation.state
       image: gym_aloha/observation.images.top

@@ -1,11 +1,12 @@
-mod dora_threads;
+mod dora_handler;
+mod rerun_recorder;
 
 /// A Python module implemented in Rust. The name of this module must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
 #[pyo3::pymodule]
 mod _rust {
-    use crate::dora_threads::DoraThreadsHandle;
+    use crate::{dora_handler::DoraHandler, rerun_recorder::RerunRecorder};
     use pyo3::{exceptions::PyRuntimeError, prelude::*};
     use pyo3_arrow::{PyArray, error::PyArrowResult};
 
@@ -14,17 +15,17 @@ mod _rust {
         "Hello from lerobot-trial!".to_string()
     }
 
-    #[pyclass]
-    struct DoraNode {
-        inner: DoraThreadsHandle,
+    #[pyclass(name = "DoraHandler")]
+    struct PyDoraHandler {
+        inner: DoraHandler,
     }
 
     #[pymethods]
-    impl DoraNode {
+    impl PyDoraHandler {
         #[new]
         fn new() -> PyResult<Self> {
-            let inner = DoraThreadsHandle::new().map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to initialize DoraNode: {}", e))
+            let inner = DoraHandler::new().map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to initialize DoraHandler: {}", e))
             })?;
             Ok(Self { inner })
         }
@@ -40,6 +41,40 @@ mod _rust {
 
         fn is_running(&self) -> bool {
             self.inner.is_running()
+        }
+    }
+
+    #[pyclass(name = "RerunRecorder")]
+    struct PyRerunRecorder {
+        inner: RerunRecorder,
+    }
+
+    #[pymethods]
+    impl PyRerunRecorder {
+        #[new]
+        fn new() -> PyResult<Self> {
+            let inner = RerunRecorder::new().map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to initialize RerunRecorder: {}", e))
+            })?;
+            Ok(Self { inner })
+        }
+
+        fn log_rgb_image(
+            &self,
+            path: String,
+            data: Vec<u8>,
+            width: u32,
+            height: u32,
+        ) -> PyResult<()> {
+            self.inner
+                .log_image(&path, data, width, height)
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log RGB image: {}", e)))
+        }
+
+        fn log_scalars(&self, path: String, values: Vec<f64>) -> PyResult<()> {
+            self.inner
+                .log_scalars(&path, values)
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log scalars: {}", e)))
         }
     }
 
