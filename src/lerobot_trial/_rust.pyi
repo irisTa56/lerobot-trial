@@ -15,6 +15,14 @@ class DoraInput:
 class RerunRecorder:
     def __init__(self) -> None: ...
     def log_rgb_image(
-        self, path: str, data: bytes, width: int, height: int
+        self,
+        path: str,
+        data: bytes,
+        width: int,
+        height: int,
     ) -> None: ...
-    def log_scalars(self, path: str, values: list[float]) -> None: ...
+    def log_scalars(
+        self,
+        path: str,
+        values: list[float],
+    ) -> None: ...
