@@ -7,6 +7,8 @@ nodes:
     outputs:
       - observation.state
       - observation.images.top
+    env:
+      MJPEG_PORT: "8091"
 
   - id: rust_binding
     build: uv sync  # Ensure building with maturin
@@ -14,4 +16,5 @@ nodes:
     args: -m lerobot_trial.nodes.rust_binding
     inputs:
       state: gym_aloha/observation.state
-      image: gym_aloha/observation.images.top
+    env:
+      MJPEG_PORT: "8091"

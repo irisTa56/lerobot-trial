@@ -26,6 +26,7 @@ from dataclasses import asdict
 from pprint import pformat
 from typing import Any
 
+import cv2
 import gym_aloha  # noqa: F401
 import gymnasium as gym
 import pyarrow as pa
@@ -35,9 +36,16 @@ from lerobot.envs.configs import AlohaEnv
 from lerobot.utils.utils import init_logging
 from numpy.typing import NDArray
 
+from lerobot_trial.http.mjpeg_server import start_mjpeg_server, update_frame
+
+
+def get_image_from_observation(obs: dict[str, Any]) -> NDArray:
+    return obs["pixels"]["top"]
+
+
 OBSERVATION_CHANNELS = {
     "observation.state": lambda obs: obs["agent_pos"],
-    "observation.images.top": lambda obs: obs["pixels"]["top"],
+    "observation.images.top": get_image_from_observation,
 }
 
 logger = logging.getLogger(__name__)
@@ -77,6 +85,7 @@ def main(cfg: AlohaEnv) -> None:
             case ("INPUT", "tick"):
                 start = time.perf_counter()
 
+                # action *= 1.01
                 obs, _reward, terminated, truncated, _info = env.step(action)
                 if (terminated or truncated) and not done:
                     logger.info(f"Episode done: {terminated=}, {truncated=}")
@@ -84,6 +93,10 @@ def main(cfg: AlohaEnv) -> None:
 
                 for output_id, data, metadata in observation_to_dora_outputs(obs):
                     node.send_output(output_id, data, metadata)
+
+                image = get_image_from_observation(obs)
+                image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                update_frame(image_bgr)
 
                 logger.debug(f"Step took {time.perf_counter() - start:.4f} secs.")
 
@@ -97,4 +110,7 @@ def main(cfg: AlohaEnv) -> None:
 
 if __name__ == "__main__":
     init_logging(console_level=os.getenv("PYTHON_LOG", "INFO"))
+    mjpeg_host = os.getenv("MJPEG_HOST", "localhost")
+    mjpeg_port = int(os.getenv("MJPEG_PORT", "8080"))
+    start_mjpeg_server(mjpeg_host, mjpeg_port)
     main()

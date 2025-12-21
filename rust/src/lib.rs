@@ -6,13 +6,34 @@ mod rerun_recorder;
 /// import the module.
 #[pyo3::pymodule]
 mod _rust {
-    use crate::{dora_handler::DoraHandler, rerun_recorder::RerunRecorder};
+    use crate::{
+        dora_handler::DoraHandler,
+        rerun_recorder::{LogRequest, RerunRecorder},
+    };
     use pyo3::{exceptions::PyRuntimeError, prelude::*};
     use pyo3_arrow::{PyArray, error::PyArrowResult};
 
     #[pyfunction]
     fn hello_from_bin() -> String {
         "Hello from lerobot-trial!".to_string()
+    }
+
+    /// Create DoraHandler and RerunRecorder together, sharing the same log channel
+    #[pyfunction]
+    #[pyo3(signature = (rrd_path=None))]
+    fn create_handlers(rrd_path: Option<String>) -> PyResult<(PyDoraHandler, PyRerunRecorder)> {
+        let (rerun, log_tx) = RerunRecorder::init(rrd_path).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to initialize RerunRecorder: {}", e))
+        })?;
+
+        let dora = DoraHandler::new(log_tx).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to initialize DoraHandler: {}", e))
+        })?;
+
+        Ok((
+            PyDoraHandler { inner: dora },
+            PyRerunRecorder { inner: rerun },
+        ))
     }
 
     #[pyclass(name = "DoraHandler")]
@@ -22,14 +43,6 @@ mod _rust {
 
     #[pymethods]
     impl PyDoraHandler {
-        #[new]
-        fn new() -> PyResult<Self> {
-            let inner = DoraHandler::new().map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to initialize DoraHandler: {}", e))
-            })?;
-            Ok(Self { inner })
-        }
-
         fn try_recv(&self, py: Python) -> PyArrowResult<Option<DoraInput>> {
             let Some((id, data, shape)) = self.inner.try_recv() else {
                 return Ok(None);
@@ -51,31 +64,19 @@ mod _rust {
 
     #[pymethods]
     impl PyRerunRecorder {
-        #[new]
-        #[pyo3(signature = (rrd_path=None))]
-        fn new(rrd_path: Option<String>) -> PyResult<Self> {
-            let inner = RerunRecorder::new(rrd_path).map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to initialize RerunRecorder: {}", e))
-            })?;
-            Ok(Self { inner })
+        fn log_image(&self, path: String, data: Vec<u8>, width: u32, height: u32) -> PyResult<()> {
+            self.inner
+                .send_log_request(LogRequest::Image {
+                    path,
+                    data,
+                    width,
+                    height,
+                })
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log image: {}", e)))
         }
 
-        fn log_rgb_image(
-            &self,
-            path: String,
-            data: Vec<u8>,
-            width: u32,
-            height: u32,
-        ) -> PyResult<()> {
-            self.inner
-                .log_image(&path, data, width, height)
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log RGB image: {}", e)))
-        }
-
-        fn log_scalars(&self, path: String, values: Vec<f64>) -> PyResult<()> {
-            self.inner
-                .log_scalars(&path, values)
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log scalars: {}", e)))
+        fn is_running(&self) -> bool {
+            self.inner.is_running()
         }
     }
 

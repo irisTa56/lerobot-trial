@@ -66,6 +66,7 @@ ignore = [
   "D21",
   "E50",
   "EM1",
+  "ERA",
   "FIX",
   "G00",
   "INP",
