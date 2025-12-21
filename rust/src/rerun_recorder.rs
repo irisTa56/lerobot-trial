@@ -1,6 +1,5 @@
 use rerun::{
     EncodedImage, Image, RecordingStreamBuilder, Scalars,
-    datatypes::{ChannelDatatype, ColorModel, ImageFormat},
     log::ChunkBatcherConfig,
     sink::{FileSink, GrpcSink},
 };
@@ -61,16 +60,7 @@ impl RerunRecorder {
                         data,
                         width,
                         height,
-                    } => {
-                        let format = ImageFormat {
-                            width,
-                            height,
-                            pixel_format: None,
-                            color_model: Some(ColorModel::RGB),
-                            channel_datatype: Some(ChannelDatatype::U8),
-                        };
-                        rec.log(path.as_str(), &Image::new(data, format))
-                    }
+                    } => rec.log(path.as_str(), &Image::from_rgb24(data, [width, height])),
                     LogRequest::EncodedImage { path, data } => {
                         rec.log(path.as_str(), &EncodedImage::from_file_contents(data))
                     }
