@@ -4,6 +4,7 @@ nodes:
     args: -m lerobot_trial.nodes.gym_aloha
     inputs:
       tick: dora/timer/millis/20  # 50 Hz control loop
+      action: rust_binding/action
     outputs:
       - observation.state
       - observation.images.top
@@ -16,5 +17,7 @@ nodes:
     args: -m lerobot_trial.nodes.rust_binding
     inputs:
       state: gym_aloha/observation.state
+    outputs:
+      - action
     env:
       MJPEG_PORT: "8091"

@@ -96,9 +96,3 @@ impl RerunRecorder {
         !self.log_handle.is_finished()
     }
 }
-
-impl Drop for RerunRecorder {
-    fn drop(&mut self) {
-        // Channel will be closed when log_tx is dropped, causing the thread to exit
-    }
-}

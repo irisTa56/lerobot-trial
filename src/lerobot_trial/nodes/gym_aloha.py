@@ -5,6 +5,7 @@
 ### Inputs
 
 - `tick`: Trigger signal to execute one environment step.
+- `action`: Action to be applied to the environment (flattened PyArrow array).
 
 ### Outputs
 
@@ -85,7 +86,6 @@ def main(cfg: AlohaEnv) -> None:
             case ("INPUT", "tick"):
                 start = time.perf_counter()
 
-                # action *= 1.01
                 obs, _reward, terminated, truncated, _info = env.step(action)
                 if (terminated or truncated) and not done:
                     logger.info(f"Episode done: {terminated=}, {truncated=}")
@@ -100,7 +100,9 @@ def main(cfg: AlohaEnv) -> None:
 
                 logger.debug(f"Step took {time.perf_counter() - start:.4f} secs.")
 
-            # TODO: Add a clause to update `action` based on input
+            case ("INPUT", "action"):
+                action: NDArray = event["value"].to_numpy()
+                logger.debug(f"Received action: shape={action.shape}")
 
             case ("STOP", _):
                 logger.info("Received stop signal from Dora.")

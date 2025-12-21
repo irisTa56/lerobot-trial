@@ -7,6 +7,7 @@ that handles Dora event processing and Rerun logging.
 
 - State data (observation.state): Received by Rust, logged to Rerun, passed to Python
 - Image data: Read from MJPEG HTTP stream, logged via Rust
+- Action data: Computed from state (state * 1.01) and sent back to gym_aloha node
 
 ## Dora Channels
 
@@ -16,7 +17,7 @@ that handles Dora event processing and Rerun logging.
 
 ### Outputs
 
-- None
+- action: Action data computed from state (state * 1.01)
 """
 
 import logging
@@ -26,6 +27,7 @@ import time
 
 import cv2
 from lerobot.utils.utils import init_logging
+from numpy.typing import NDArray
 
 from lerobot_trial._rust import DoraHandler, RerunRecorder, create_handlers
 
@@ -93,13 +95,14 @@ def main() -> None:
     )
     image_thread.start()
 
-    # Main loop: receive state data
+    # Main loop: receive state data and send action
     while dora_handler.is_running():
         # Receive state data from Rust (already logged by Rust)
         if state_data := dora_handler.try_recv():
             logger.debug(f"Received state data: {state_data.id}")
-            # State data is already logged by Rust, just receive it
-            # Process state data here if needed
+            action: NDArray = state_data.array.to_numpy() * 1.01
+            dora_handler.send_action(action.tolist())
+            logger.debug(f"Sent action: {len(action)} values")
         else:
             time.sleep(NO_DATA_SLEEP_INTERVAL)
 

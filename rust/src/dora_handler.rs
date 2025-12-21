@@ -1,34 +1,38 @@
 use crate::rerun_recorder::LogRequest;
 use dora_message::id::DataId;
 use dora_node_api::{
-    DoraNode, Event, Metadata, Parameter,
+    DoraNode, Event, Metadata, MetadataParameters, Parameter,
     arrow::{
         array::{ArrayRef, AsArray},
         datatypes::{DataType, Float64Type},
     },
 };
 use std::{
+    collections::BTreeMap,
     sync::{
         Arc, Mutex,
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver, SendError, Sender},
     },
     thread::{self, JoinHandle},
 };
 
 type BoxedError = Box<dyn std::error::Error>;
 type DataReceiver = Receiver<(DataId, ArrayRef, Vec<usize>)>;
+type SendRequest = (String, ArrayRef, MetadataParameters);
 
 #[derive(Debug)]
 pub(crate) struct DoraHandler {
+    send_tx: Sender<SendRequest>,
     recv_rx: Arc<Mutex<DataReceiver>>,
     recv_handle: JoinHandle<()>,
 }
 
 impl DoraHandler {
     pub(crate) fn new(log_tx: Sender<LogRequest>) -> Result<Self, BoxedError> {
-        let (_node, mut events) = DoraNode::init_from_env()?;
+        let (mut node, mut events) = DoraNode::init_from_env()?;
 
         let (recv_tx, recv_rx) = mpsc::channel();
+        let (send_tx, send_rx) = mpsc::channel::<SendRequest>();
 
         let recv_handle = thread::spawn(move || {
             while let Some(event) = events.recv() {
@@ -64,7 +68,16 @@ impl DoraHandler {
             }
         });
 
+        thread::spawn(move || {
+            while let Ok((output_id, data, parameters)) = send_rx.recv() {
+                if let Err(e) = node.send_output(output_id.clone().into(), parameters, data) {
+                    eprintln!("Failed to send output '{}': {:?}", output_id, e);
+                }
+            }
+        });
+
         Ok(Self {
+            send_tx,
             recv_rx: Arc::new(Mutex::new(recv_rx)),
             recv_handle,
         })
@@ -77,6 +90,15 @@ impl DoraHandler {
 
     pub(crate) fn is_running(&self) -> bool {
         !self.recv_handle.is_finished()
+    }
+
+    pub(crate) fn send_output(
+        &self,
+        output_id: String,
+        data: ArrayRef,
+        parameters: BTreeMap<String, Parameter>,
+    ) -> Result<(), SendError<SendRequest>> {
+        self.send_tx.send((output_id, data, parameters))
     }
 }
 

@@ -1,17 +1,22 @@
 mod dora_handler;
 mod rerun_recorder;
 
+const ACTION_OUTPUT_ID: &str = "action";
+
 /// A Python module implemented in Rust. The name of this module must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
 #[pyo3::pymodule]
 mod _rust {
     use crate::{
+        ACTION_OUTPUT_ID,
         dora_handler::DoraHandler,
         rerun_recorder::{LogRequest, RerunRecorder},
     };
+    use dora_node_api::arrow::array::Float64Array;
     use pyo3::{exceptions::PyRuntimeError, prelude::*};
     use pyo3_arrow::{PyArray, error::PyArrowResult};
+    use std::sync::Arc;
 
     #[pyfunction]
     fn hello_from_bin() -> String {
@@ -54,6 +59,13 @@ mod _rust {
 
         fn is_running(&self) -> bool {
             self.inner.is_running()
+        }
+
+        fn send_action(&self, data: Vec<f64>) -> PyResult<()> {
+            let array = Arc::new(Float64Array::from(data));
+            self.inner
+                .send_output(ACTION_OUTPUT_ID.to_string(), array, Default::default())
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to send action: {}", e)))
         }
     }
 
