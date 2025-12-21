@@ -10,6 +10,7 @@ use std::{
         mpsc::{self, Receiver, Sender},
     },
     thread::{self, JoinHandle},
+    time::Instant,
 };
 
 type BoxedError = Box<dyn std::error::Error>;
@@ -119,7 +120,16 @@ impl RecordingSession {
                     eprintln!("Failed to start recording: {}", e);
                 }
             }
-            LogRequest::StopRecording => self.stream = None,
+            LogRequest::StopRecording => {
+                if let Some(ref mut stream) = self.stream {
+                    let start = Instant::now();
+                    if let Err(e) = stream.flush_blocking() {
+                        eprintln!("Failed to flush Rerun stream: {}", e);
+                    }
+                    println!("Flushed Rerun stream in {:.2?}", start.elapsed());
+                }
+                self.stream = None
+            }
             _ if self.stream.is_none() => {}
             LogRequest::LogImage {
                 path,
