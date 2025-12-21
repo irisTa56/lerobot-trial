@@ -10,6 +10,7 @@ dependencies = [
     "jupyter>=1.1.1",
     "lerobot[aloha]>=0.4.2",
     "pytest>=9.0.1",
+    "rerun-sdk[notebook]>=0.26.2",
     "types-requests>=2.32.4",
     "uvicorn>=0.38.0",
 ]
