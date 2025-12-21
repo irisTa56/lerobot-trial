@@ -1,5 +1,5 @@
 use rerun::{
-    Image, RecordingStreamBuilder, Scalars,
+    EncodedImage, Image, RecordingStreamBuilder, Scalars,
     datatypes::{ChannelDatatype, ColorModel, ImageFormat},
     log::ChunkBatcherConfig,
     sink::{FileSink, GrpcSink},
@@ -19,6 +19,10 @@ pub(crate) enum LogRequest {
         data: Vec<u8>,
         width: u32,
         height: u32,
+    },
+    EncodedImage {
+        path: String,
+        data: Vec<u8>,
     },
     Scalars {
         path: String,
@@ -66,6 +70,9 @@ impl RerunRecorder {
                             channel_datatype: Some(ChannelDatatype::U8),
                         };
                         rec.log(path.as_str(), &Image::new(data, format))
+                    }
+                    LogRequest::EncodedImage { path, data } => {
+                        rec.log(path.as_str(), &EncodedImage::from_file_contents(data))
                     }
                     LogRequest::Scalars { path, values } => {
                         rec.log(path.as_str(), &Scalars::new(values))

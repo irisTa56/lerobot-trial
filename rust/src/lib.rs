@@ -87,6 +87,12 @@ mod _rust {
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to log image: {}", e)))
         }
 
+        fn log_encoded_image(&self, path: String, data: Vec<u8>) -> PyResult<()> {
+            self.inner
+                .send_log_request(LogRequest::EncodedImage { path, data })
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log encoded image: {}", e)))
+        }
+
         fn is_running(&self) -> bool {
             self.inner.is_running()
         }
