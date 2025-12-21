@@ -1,9 +1,0 @@
-nodes:
-  - id: gym_aloha
-    path: python
-    args: -m lerobot_trial.nodes.gym_aloha
-    inputs:
-      tick: dora/timer/millis/20  # 50 Hz control loop
-    outputs:
-      - observation.state
-      - observation.images.top
