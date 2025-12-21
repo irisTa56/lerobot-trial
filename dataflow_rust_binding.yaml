@@ -6,8 +6,7 @@ nodes:
       tick: dora/timer/millis/20  # 50 Hz control loop
       action: rust_binding/action
     outputs:
-      - observation.state
-      - observation.images.top
+      - agent_pos
     env:
       MJPEG_PORT: "8091"
 
@@ -16,7 +15,7 @@ nodes:
     path: python
     args: -m lerobot_trial.nodes.rust_binding
     inputs:
-      state: gym_aloha/observation.state
+      agent_pos: gym_aloha/agent_pos
     outputs:
       - action
     env:

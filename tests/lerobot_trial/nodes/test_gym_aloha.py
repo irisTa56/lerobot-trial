@@ -1,13 +1,12 @@
 from lerobot.envs.configs import AlohaEnv
-from lerobot.utils.constants import ACTION
 
-from lerobot_trial.nodes.gym_aloha import make_env, observation_to_dora_outputs
+from lerobot_trial.nodes.gym_aloha import make_env
 
 
-def test_observation_to_dora_outputs() -> None:
+def test_gym_aloha_observation() -> None:
     cfg = AlohaEnv()
     env = make_env(cfg)
     obs, _info = env.reset()
-    assert {k for k, _, _ in observation_to_dora_outputs(obs)} == {
-        cfg.features_map[k] for k in cfg.features if k != ACTION
-    }
+
+    assert obs["agent_pos"].shape == (14,)
+    assert obs["pixels"]["top"].shape == (480, 640, 3)
