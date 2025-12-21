@@ -1,22 +1,22 @@
 mod dora_handler;
 mod rerun_recorder;
 
-const ACTION_OUTPUT_ID: &str = "action";
-
 /// A Python module implemented in Rust. The name of this module must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
 #[pyo3::pymodule]
 mod _rust {
     use crate::{
-        ACTION_OUTPUT_ID,
         dora_handler::DoraHandler,
         rerun_recorder::{LogRequest, RerunRecorder},
     };
-    use dora_node_api::arrow::array::Float64Array;
+    use dora_node_api::arrow::array::{BooleanArray, Float64Array};
     use pyo3::{exceptions::PyRuntimeError, prelude::*};
     use pyo3_arrow::{PyArray, error::PyArrowResult};
-    use std::sync::Arc;
+    use std::sync::{Arc, RwLock};
+
+    const ACTION_OUTPUT_ID: &str = "action";
+    const RESET_OUTPUT_ID: &str = "reset";
 
     #[pyfunction]
     fn hello_from_bin() -> String {
@@ -37,7 +37,9 @@ mod _rust {
 
         Ok((
             PyDoraHandler { inner: dora },
-            PyRerunRecorder { inner: rerun },
+            PyRerunRecorder {
+                inner: RwLock::new(rerun),
+            },
         ))
     }
 
@@ -67,18 +69,28 @@ mod _rust {
                 .send_output(ACTION_OUTPUT_ID.to_string(), array, Default::default())
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to send action: {}", e)))
         }
+
+        fn send_reset(&self) -> PyResult<()> {
+            let array = Arc::new(BooleanArray::from(vec![true]));
+            self.inner
+                .send_output(RESET_OUTPUT_ID.to_string(), array, Default::default())
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to send reset: {}", e)))
+        }
     }
 
     #[pyclass(name = "RerunRecorder")]
     struct PyRerunRecorder {
-        inner: RerunRecorder,
+        // RwLock is needed because start/stop_recording() require &mut self
+        inner: RwLock<RerunRecorder>,
     }
 
     #[pymethods]
     impl PyRerunRecorder {
         fn log_image(&self, path: String, data: Vec<u8>, width: u32, height: u32) -> PyResult<()> {
             self.inner
-                .send_log_request(LogRequest::Image {
+                .read()
+                .unwrap()
+                .send_log_request(LogRequest::LogImage {
                     path,
                     data,
                     width,
@@ -89,12 +101,30 @@ mod _rust {
 
         fn log_encoded_image(&self, path: String, data: Vec<u8>) -> PyResult<()> {
             self.inner
-                .send_log_request(LogRequest::EncodedImage { path, data })
+                .read()
+                .unwrap()
+                .send_log_request(LogRequest::LogEncodedImage { path, data })
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to log encoded image: {}", e)))
         }
 
+        fn start_recording(&self) -> PyResult<()> {
+            self.inner
+                .write()
+                .unwrap()
+                .start_recording()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to start recording: {}", e)))
+        }
+
+        fn stop_recording(&self) -> PyResult<()> {
+            self.inner
+                .write()
+                .unwrap()
+                .stop_recording()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to stop recording: {}", e)))
+        }
+
         fn is_running(&self) -> bool {
-            self.inner.is_running()
+            self.inner.read().unwrap().is_running()
         }
     }
 

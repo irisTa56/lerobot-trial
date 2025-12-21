@@ -44,7 +44,7 @@ impl DoraHandler {
 
                         match (shape.len(), array.data_type()) {
                             (1, DataType::Float64) => {
-                                let request = LogRequest::Scalars {
+                                let request = LogRequest::LogScalars {
                                     path: id.clone().into(),
                                     values: array.as_primitive::<Float64Type>().values().to_vec(),
                                 };

@@ -4,7 +4,8 @@ This document provides guidelines for AI assistants working on this codebase.
 
 ## Project Overview
 
-This is a playground project to experiment with LeRobot without real robots. The codebase is hybrid Python/Rust:
+This is a playground project to experiment with LeRobot without real robots.
+The codebase is hybrid Python/Rust:
 
 - **Python**: Main application code using LeRobot, FastAPI, Rerun, and Dora
 - **Rust**: Native bindings for performance-critical components (in [rust/](rust/))
@@ -25,6 +26,15 @@ Key directories:
 - Excessive documentation is a maintenance burden - write self-explanatory code instead
 - Only add comments where logic is not self-evident
 - Keep solutions focused on the current requirements, not hypothetical future needs
+
+## Code Structure and Organization
+
+### Function and Method Ordering
+
+Order code by abstraction level: constructors first, then public methods, then private helpers.
+This lets readers understand the high-level purpose before diving into implementation details.
+
+Place tightly coupled helpers immediately after their sole caller to keep related logic together.
 
 ## Development Workflow
 
@@ -65,6 +75,16 @@ Standard Rust toolchain:
 - **Test runner**: `cargo test`
 
 All Rust commands run in the [rust/](rust/) directory.
+
+### Python/Rust Integration
+
+When modifying Rust code that's exposed to Python:
+
+1. **Update Rust implementation** in [rust/src/](rust/src/)
+2. **Update type stubs** in [src/lerobot_trial/_rust.pyi](src/lerobot_trial/_rust.pyi) to reflect API changes
+3. **Run all checks** with `mise pre-commit` to ensure both Python and Rust tests pass
+
+The type stub file provides IDE autocompletion and type checking for the Rust-implemented Python module.
 
 ### Running Individual Checks
 

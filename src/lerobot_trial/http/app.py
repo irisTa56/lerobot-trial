@@ -1,99 +1,119 @@
-"""FastAPI application for Dora dataflow integration.
+"""FastAPI application for LeRobot control loop.
 
 ## HTTP Endpoints
 
 - GET `/health`: Health check endpoint
-- GET `/status`: Get current node status
-- GET `/data`: Get all stored data
-- POST `/data`: Post data to be processed by the dataflow
-
-## Running Standalone
-
-    uvicorn lerobot_trial.http.app:app --host 0.0.0.0 --port 8000
+- POST `/control/start`: Start control loop and recording
+- POST `/control/stop`: Stop control loop and recording
+- POST `/control/reset`: Reset the gym environment
 """
 
 import logging
-import os
-from typing import Any
+import threading
+from typing import Protocol, cast
 
-import pyarrow as pa
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, status
+from starlette.datastructures import State
 
-from lerobot_trial.http.client import DoraClient
+from lerobot_trial._rust import DoraHandler, RerunRecorder
 
 logger = logging.getLogger(__name__)
 
-# Global Dora client instance shared between FastAPI app and Dora node
-dora_client = DoraClient()
+
+class ControlState:
+    """Thread-safe control state for start/stop functionality."""
+
+    def __init__(self) -> None:
+        self._running = False
+        self._lock = threading.Lock()
+
+    def start(self) -> bool:
+        """Start control loop. Returns True if state changed, False if already running."""
+        with self._lock:
+            if self._running:
+                return False
+            self._running = True
+            return True
+
+    def stop(self) -> bool:
+        """Stop control loop. Returns True if state changed, False if already stopped."""
+        with self._lock:
+            if not self._running:
+                return False
+            self._running = False
+            return True
+
+    def is_running(self) -> bool:
+        with self._lock:
+            return self._running
+
+
+class AppStateProtocol(Protocol):
+    control_state: ControlState
+    rerun_recorder: RerunRecorder
+    dora_handler: DoraHandler
 
 
 app = FastAPI(
-    title="Dora HTTP Server Node",
-    description="HTTP server for Dora dataflow",
+    title="LeRobot Control Server",
+    description="HTTP server for controlling LeRobot control loop",
 )
+app.state = State()
+
+
+def get_state() -> AppStateProtocol:
+    """Get application state with type safety."""
+    return cast(AppStateProtocol, app.state)
+
+
+def set_state(
+    control_state: ControlState,
+    rerun_recorder: RerunRecorder,
+    dora_handler: DoraHandler,
+) -> None:
+    """Set application state."""
+    state = cast(AppStateProtocol, app.state)
+    state.control_state = control_state
+    state.rerun_recorder = rerun_recorder
+    state.dora_handler = dora_handler
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Health check endpoint.
-
-    Returns:
-        Health status.
-
-    """
+    """Health check endpoint."""
     return {"status": "healthy"}
 
 
-@app.get("/status")
-async def status() -> dict[str, Any]:
-    """Get current node status.
+@app.post("/control/start", status_code=status.HTTP_204_NO_CONTENT)
+async def start_control() -> None:
+    """Start control loop and start recording."""
+    state = get_state()
 
-    Returns:
-        Node status including Dora availability and data store size.
-
-    """
-    return {
-        "dora_available": dora_client.is_available(),
-        "data_store_size": len(dora_client.data_store),
-        "dora_node_id": os.getenv("DORA_NODE_ID"),
-    }
+    if state.control_state.start():
+        logger.info("Control loop started via HTTP")
+        state.rerun_recorder.start_recording()
+        logger.info("Rerun recording started")
+    else:
+        logger.info("Control loop start requested but already running")
 
 
-@app.get("/data")
-async def get_data() -> dict[str, Any]:
-    """Get all stored data.
+@app.post("/control/stop", status_code=status.HTTP_204_NO_CONTENT)
+async def stop_control() -> None:
+    """Stop control loop and stop recording."""
+    state = get_state()
 
-    Returns:
-        All data stored in the data store.
+    if state.control_state.stop():
+        logger.info("Control loop stopped via HTTP")
+        state.rerun_recorder.stop_recording()
+        logger.info("Rerun recording stopped")
+    else:
+        logger.info("Control loop stop requested but already stopped")
 
-    """
-    return {"data": dora_client.data_store}
 
+@app.post("/control/reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_environment() -> None:
+    """Reset the gym environment."""
+    state = get_state()
 
-@app.post("/data")
-async def post_data(data: dict[str, Any]) -> dict[str, str]:
-    """Post data to be forwarded to Dora dataflow.
-
-    Args:
-        data: Dictionary of key-value pairs to forward.
-
-    Returns:
-        Success message.
-
-    Raises:
-        HTTPException: If Dora node is not available or processing fails.
-
-    """
-    if not dora_client.is_available():
-        raise HTTPException(
-            status_code=503,
-            detail="Dora node not available. Server running in standalone mode.",
-        )
-
-    try:
-        dora_client.data_store.update(data)
-        dora_client.send_output("request", pa.array([pa.Table.from_pydict(data)]))
-        return {"status": "success", "message": "Data forwarded to dataflow"}
-    except Exception as e:
-        logger.exception("Failed to process data")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    state.dora_handler.send_reset()
+    logger.info("Reset command sent to gym_aloha")

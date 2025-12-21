@@ -83,6 +83,13 @@ def main(cfg: AlohaEnv) -> None:
                 action: NDArray = event["value"].to_numpy()
                 logger.debug(f"Received action: shape={action.shape}")
 
+            case ("INPUT", "reset"):
+                logger.info("Received reset command.")
+                obs, _ = env.reset()
+                action = obs["agent_pos"]
+                done = False
+                logger.info("Environment reset complete.")
+
             case ("STOP", _):
                 logger.info("Received stop signal from Dora.")
             case _:

@@ -5,6 +5,7 @@ nodes:
     inputs:
       tick: dora/timer/millis/20  # 50 Hz control loop
       action: rust_binding/action
+      reset: rust_binding/reset
     outputs:
       - agent_pos
     env:
@@ -18,5 +19,7 @@ nodes:
       agent_pos: gym_aloha/agent_pos
     outputs:
       - action
+      - reset
     env:
       MJPEG_PORT: "8091"
+      HTTP_PORT: "8000"
