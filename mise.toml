@@ -28,11 +28,16 @@ run = "lychee --exclude-path lerobot ."
 [tasks.pre-commit-py]
 description = "Run all Python pre-commit checks"
 depends = [
+  "nbstripout",
   "format-py",
   "lint-py",
   "typecheck",
   "test-py",
 ]
+
+[tasks.nbstripout]
+description = "Strip Jupyter notebook outputs"
+run = "uv run nbstripout notebook/*.ipynb"
 
 [tasks.format-py]
 description = "Format Python files"
