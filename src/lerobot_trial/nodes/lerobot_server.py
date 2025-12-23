@@ -1,6 +1,6 @@
 """Dora node using Rust-based binding implementation with HTTP control.
 
-This node demonstrates how to use the Rust-implemented DoraHandler and RerunRecorder
+This node demonstrates how to use the Rust-implemented DoraHandler and RerunClient
 that handles Dora event processing and Rerun logging.
 
 ## Architecture
@@ -44,7 +44,7 @@ from lerobot.policies.factory import make_pre_post_processors
 from lerobot.utils.utils import init_logging
 from numpy.typing import NDArray
 
-from lerobot_trial._rust import DoraHandler, RerunRecorder, create_handlers
+from lerobot_trial._rust import DoraHandler, RerunClient, create_handlers
 from lerobot_trial.http import app as http_app
 from lerobot_trial.http.app import ControlState
 
@@ -74,10 +74,6 @@ class ImageBuffer:
 
 def get_python_log_level() -> str:
     return os.getenv("PYTHON_LOG", "INFO").upper()
-
-
-def get_rerun_rrd_path() -> str | None:
-    return os.getenv("RERUN_RRD_PATH")
 
 
 def get_mjpeg_stream_url() -> str:
@@ -122,7 +118,7 @@ class UvicornServer(uvicorn.Server):
 
 
 def image_logger_thread(
-    rerun_recorder: RerunRecorder,
+    rerun_recorder: RerunClient,
     dora_handler: DoraHandler,
     image_buffer: ImageBuffer,
     control_state: ControlState,
@@ -177,8 +173,8 @@ def image_logger_thread(
 
 
 def main() -> None:
-    dora_handler, rerun_recorder = create_handlers(get_rerun_rrd_path())
-    logger.info("DoraHandler and RerunRecorder initialized successfully")
+    dora_handler, rerun_recorder = create_handlers()
+    logger.info("DoraHandler and RerunClient initialized successfully")
 
     model_id = get_model_id()
     logger.info(f"Loading model: {model_id}")

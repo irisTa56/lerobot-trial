@@ -9,15 +9,20 @@
 """
 
 import logging
+import os
 import threading
 from typing import Protocol, cast
 
 from fastapi import FastAPI, status
 from starlette.datastructures import State
 
-from lerobot_trial._rust import DoraHandler, RerunRecorder
+from lerobot_trial._rust import DoraHandler, RerunClient
 
 logger = logging.getLogger(__name__)
+
+
+def get_rerun_rrd_path() -> str | None:
+    return os.getenv("RERUN_RRD_PATH")
 
 
 class ControlState:
@@ -50,7 +55,7 @@ class ControlState:
 
 class AppStateProtocol(Protocol):
     control_state: ControlState
-    rerun_recorder: RerunRecorder
+    rerun_recorder: RerunClient
     dora_handler: DoraHandler
 
 
@@ -68,7 +73,7 @@ def get_state() -> AppStateProtocol:
 
 def set_state(
     control_state: ControlState,
-    rerun_recorder: RerunRecorder,
+    rerun_recorder: RerunClient,
     dora_handler: DoraHandler,
 ) -> None:
     """Set application state."""
@@ -91,7 +96,7 @@ async def start_control() -> None:
 
     if state.control_state.start():
         logger.info("Control loop started via HTTP")
-        state.rerun_recorder.start_recording()
+        state.rerun_recorder.start_recording(get_rerun_rrd_path())
         logger.info("Rerun recording started")
     else:
         logger.info("Control loop start requested but already running")

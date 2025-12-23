@@ -8,7 +8,7 @@ mod rerun_recorder;
 mod _rust {
     use crate::{
         dora_handler::DoraHandler,
-        rerun_recorder::{LogRequest, RerunRecorder},
+        rerun_recorder::{LogRequest, RerunClient},
     };
     use dora_node_api::arrow::array::{BooleanArray, Float64Array};
     use pyo3::{exceptions::PyRuntimeError, prelude::*};
@@ -23,12 +23,11 @@ mod _rust {
         "Hello from lerobot-trial!".to_string()
     }
 
-    /// Create DoraHandler and RerunRecorder together, sharing the same log channel
+    /// Create DoraHandler and RerunClient together, sharing the same log channel
     #[pyfunction]
-    #[pyo3(signature = (rrd_path=None))]
-    fn create_handlers(rrd_path: Option<String>) -> PyResult<(PyDoraHandler, PyRerunRecorder)> {
-        let (rerun, log_tx) = RerunRecorder::init(rrd_path).map_err(|e| {
-            PyRuntimeError::new_err(format!("Failed to initialize RerunRecorder: {}", e))
+    fn create_handlers() -> PyResult<(PyDoraHandler, PyRerunClient)> {
+        let (rerun, log_tx) = RerunClient::init().map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to initialize RerunClient: {}", e))
         })?;
 
         let dora = DoraHandler::new(log_tx).map_err(|e| {
@@ -37,7 +36,7 @@ mod _rust {
 
         Ok((
             PyDoraHandler { inner: dora },
-            PyRerunRecorder {
+            PyRerunClient {
                 inner: RwLock::new(rerun),
             },
         ))
@@ -78,27 +77,14 @@ mod _rust {
         }
     }
 
-    #[pyclass(name = "RerunRecorder")]
-    struct PyRerunRecorder {
+    #[pyclass(name = "RerunClient")]
+    struct PyRerunClient {
         // RwLock is needed because start/stop_recording() require &mut self
-        inner: RwLock<RerunRecorder>,
+        inner: RwLock<RerunClient>,
     }
 
     #[pymethods]
-    impl PyRerunRecorder {
-        fn log_image(&self, path: String, data: Vec<u8>, width: u32, height: u32) -> PyResult<()> {
-            self.inner
-                .read()
-                .unwrap()
-                .send_log_request(LogRequest::LogImage {
-                    path,
-                    data,
-                    width,
-                    height,
-                })
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log image: {}", e)))
-        }
-
+    impl PyRerunClient {
         fn log_encoded_image(&self, path: String, data: Vec<u8>) -> PyResult<()> {
             self.inner
                 .read()
@@ -107,11 +93,12 @@ mod _rust {
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to log encoded image: {}", e)))
         }
 
-        fn start_recording(&self) -> PyResult<()> {
+        #[pyo3(signature = (rrd_path=None))]
+        fn start_recording(&self, rrd_path: Option<String>) -> PyResult<()> {
             self.inner
                 .write()
                 .unwrap()
-                .start_recording()
+                .start_recording(rrd_path)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to start recording: {}", e)))
         }
 
