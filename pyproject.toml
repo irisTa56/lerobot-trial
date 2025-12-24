@@ -8,7 +8,6 @@ dependencies = [
     "dora-rs-cli>=0.3.13",
     "fastapi>=0.122.0",
     "lerobot[aloha]>=0.4.2",
-    "rerun-sdk[notebook]>=0.26.2",
     "types-requests>=2.32.4",
     "uvicorn>=0.38.0",
 ]
@@ -41,6 +40,10 @@ cache-keys = [
   { file = "rust/Cargo.toml" },
   { file = "rust/Cargo.lock" },
 ]
+override-dependencies = [
+    # Use the latest Rerun SDK regardless of LeRobot's pinned version.
+    "rerun-sdk[datafusion,notebook]>=0.28.0",
+]
 
 [tool.uv.sources]
 lerobot = { path = "lerobot", editable = true }
@@ -62,21 +65,21 @@ extend-exclude = ["lerobot"]
 [tool.ruff.lint]
 select = ["ALL"]  # ref. https://docs.astral.sh/ruff/rules/
 ignore = [
-  "A00",
-  "COM",
-  "D10",
-  "D20",
-  "D21",
-  "E50",
-  "EM1",
-  "ERA",
-  "FIX",
-  "G00",
-  "INP",
-  "PLR",
-  "S10",
-  "T20",
-  "TC0",
-  "TD0",
-  "TRY",
+    "A00",
+    "COM",
+    "D10",
+    "D20",
+    "D21",
+    "E50",
+    "EM1",
+    "ERA",
+    "FIX",
+    "G00",
+    "INP",
+    "PLR",
+    "S10",
+    "T20",
+    "TC0",
+    "TD0",
+    "TRY",
 ]
