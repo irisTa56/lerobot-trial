@@ -63,16 +63,16 @@ mod _rust {
         }
 
         fn send_action(&self, data: Vec<f64>) -> PyResult<()> {
-            let array = Arc::new(Float64Array::from(data));
+            let data = Arc::new(Float64Array::from(data));
             self.inner
-                .send_output(ACTION_OUTPUT_ID.to_string(), array, Default::default())
+                .send_output(ACTION_OUTPUT_ID.to_string(), data, Default::default())
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to send action: {}", e)))
         }
 
         fn send_reset(&self) -> PyResult<()> {
-            let array = Arc::new(BooleanArray::from(vec![true]));
+            let data = Arc::new(BooleanArray::from(vec![true]));
             self.inner
-                .send_output(RESET_OUTPUT_ID.to_string(), array, Default::default())
+                .send_output(RESET_OUTPUT_ID.to_string(), data, Default::default())
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to send reset: {}", e)))
         }
     }
