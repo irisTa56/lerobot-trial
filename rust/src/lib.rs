@@ -1,5 +1,5 @@
-mod dora_handler;
-mod rerun_recorder;
+mod dora;
+mod rerun;
 
 /// A Python module implemented in Rust. The name of this module must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
@@ -7,8 +7,8 @@ mod rerun_recorder;
 #[pyo3::pymodule]
 mod _rust {
     use crate::{
-        dora_handler::DoraHandler,
-        rerun_recorder::{LogRequest, RerunClient},
+        dora::DoraHandler,
+        rerun::{LogRequest, RerunClient},
     };
     use dora_node_api::arrow::array::{BooleanArray, Float64Array};
     use pyo3::{exceptions::PyRuntimeError, prelude::*};
@@ -77,6 +77,16 @@ mod _rust {
         }
     }
 
+    #[pyclass]
+    pub(crate) struct DoraInput {
+        #[pyo3(get)]
+        id: String,
+        #[pyo3(get)]
+        array: PyObject,
+        #[pyo3(get)]
+        shape: Vec<usize>,
+    }
+
     #[pyclass(name = "RerunClient")]
     struct PyRerunClient {
         // RwLock is needed because start/stop_recording() require &mut self
@@ -113,15 +123,5 @@ mod _rust {
         fn is_running(&self) -> bool {
             self.inner.read().unwrap().is_running()
         }
-    }
-
-    #[pyclass]
-    pub(crate) struct DoraInput {
-        #[pyo3(get)]
-        id: String,
-        #[pyo3(get)]
-        array: PyObject,
-        #[pyo3(get)]
-        shape: Vec<usize>,
     }
 }

@@ -1,4 +1,4 @@
-use crate::rerun_recorder::LogRequest;
+use crate::rerun::LogRequest;
 use dora_message::id::DataId;
 use dora_node_api::{
     DoraNode, Event, Metadata, MetadataParameters, Parameter,
