@@ -28,12 +28,10 @@ that handles Dora event processing and Rerun logging.
 - POST /control/reset: Reset gym environment
 """
 
-import contextlib
 import logging
-import os
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import Callable
 
 import cv2
 import torch
@@ -43,6 +41,8 @@ from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.utils.utils import init_logging
 from numpy.typing import NDArray
+from pydantic import computed_field
+from pydantic_settings import BaseSettings
 
 from lerobot_trial._rust import DoraHandler, RerunClient, create_handlers
 from lerobot_trial.control_state import ControlState
@@ -53,34 +53,27 @@ NO_DATA_SLEEP_INTERVAL = 5e-3  # seconds
 logger = logging.getLogger(__name__)
 
 
-def get_python_log_level() -> str:
-    return os.getenv("PYTHON_LOG", "INFO").upper()
+class Config(BaseSettings):
+    """Application configuration loaded from environment variables."""
 
+    python_log: str = "INFO"
+    mjpeg_host: str = "localhost"
+    mjpeg_port: int = 8080
+    model_id: str = "lerobot/act_aloha_sim_insertion_human"
+    dataset_id: str = "lerobot/aloha_sim_insertion_human"
+    http_host: str = "0.0.0.0"
+    http_port: int = 8000
+    rerun_rrd_path: str | None = None
 
-def get_mjpeg_stream_url() -> str:
-    host = os.getenv("MJPEG_HOST", "localhost")
-    port = os.getenv("MJPEG_PORT", "8080")
-    return f"http://{host}:{port}/stream"
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def python_log_level(self) -> str:
+        return self.python_log.upper()
 
-
-def get_model_id() -> str:
-    return os.getenv("MODEL_ID", "lerobot/act_aloha_sim_insertion_human")
-
-
-def get_dataset_id() -> str:
-    return os.getenv("DATASET_ID", "lerobot/aloha_sim_insertion_human")
-
-
-def get_http_host() -> str:
-    return os.getenv("HTTP_HOST", "0.0.0.0")
-
-
-def get_http_port() -> int:
-    return int(os.getenv("HTTP_PORT", "8000"))
-
-
-def get_rerun_rrd_path() -> str | None:
-    return os.getenv("RERUN_RRD_PATH")
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def mjpeg_stream_url(self) -> str:
+        return f"http://{self.mjpeg_host}:{self.mjpeg_port}/stream"
 
 
 class ImageBuffer:
@@ -88,49 +81,25 @@ class ImageBuffer:
 
     def __init__(self) -> None:
         self._image: NDArray | None = None
-        self._cond = threading.Condition()
+        self._lock = threading.Lock()
 
     def update(self, image: NDArray) -> None:
-        with self._cond:
+        with self._lock:
             self._image = image
-            self._cond.notify_all()
 
-    def get(self) -> NDArray:
-        with self._cond:
-            while self._image is None:
-                self._cond.wait()
+    def get(self) -> NDArray | None:
+        with self._lock:
             return self._image
 
 
-class UvicornServer(uvicorn.Server):
-    """Uvicorn server for running in background thread."""
-
-    @contextlib.contextmanager
-    def run_in_thread(self) -> Generator[None, None, None]:
-        """Run server in background thread with context manager."""
-        thread = threading.Thread(target=self.run, daemon=True)
-        thread.start()
-        try:
-            while not self.started:
-                time.sleep(1e-3)
-            yield
-        finally:
-            logger.info("Shutting down HTTP server")
-            self.should_exit = True
-            thread.join(timeout=3.0)
-            logger.info("HTTP server stopped")
-
-
 def image_logger_thread(
+    stream_url: str,
     rerun_recorder: RerunClient,
     dora_handler: DoraHandler,
     image_buffer: ImageBuffer,
     control_state: ControlState,
 ) -> None:
     """Thread for reading image data from MJPEG stream and logging to Rerun."""
-    logger.info("Starting image logger thread for MJPEG stream")
-
-    stream_url = get_mjpeg_stream_url()
     logger.info(f"Opening MJPEG stream: {stream_url}")
 
     cap = cv2.VideoCapture(stream_url)
@@ -147,24 +116,20 @@ def image_logger_thread(
                 continue
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            height, width, _ = frame_rgb.shape
-
             image_buffer.update(frame_rgb)
 
             if not control_state.is_running():
                 continue
 
             success, jpeg_buffer = cv2.imencode(
-                ".jpg",
-                cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR),
-                [cv2.IMWRITE_JPEG_QUALITY, 75],
+                ".jpg", frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 75]
             )
             if success:
                 rerun_recorder.log_encoded_image(
                     "mjpeg_stream/image", jpeg_buffer.tobytes()
                 )
                 logger.debug(
-                    f"Logged JPEG compressed image from MJPEG stream: {width}x{height}"
+                    f"Logged JPEG compressed image: {frame_rgb.shape[1]}x{frame_rgb.shape[0]}"
                 )
             else:
                 logger.warning("Failed to encode frame as JPEG")
@@ -176,19 +141,116 @@ def image_logger_thread(
         logger.info("Image logger thread exiting")
 
 
-def main() -> None:
-    rrd_path = get_rerun_rrd_path()
-    dora_handler, rerun_recorder = create_handlers(rrd_path)
+def start_image_thread(
+    config: Config,
+    rerun_recorder: RerunClient,
+    dora_handler: DoraHandler,
+    image_buffer: ImageBuffer,
+    control_state: ControlState,
+) -> threading.Thread:
+    """Start image logger thread and wait for first image."""
+    image_thread = threading.Thread(
+        target=image_logger_thread,
+        args=(
+            config.mjpeg_stream_url,
+            rerun_recorder,
+            dora_handler,
+            image_buffer,
+            control_state,
+        ),
+        daemon=True,
+    )
+    image_thread.start()
+
+    logger.debug("Waiting for first image from MJPEG stream...")
+    while (first_image := image_buffer.get()) is None:
+        time.sleep(NO_DATA_SLEEP_INTERVAL)
+    logger.info(f"First image received: {first_image.shape}")
+
+    return image_thread
+
+
+def start_http_server(
+    config: Config,
+    control_state: ControlState,
+    rerun_recorder: RerunClient,
+    dora_handler: DoraHandler,
+) -> uvicorn.Server:
+    """Start HTTP server in background thread and wait until ready."""
+    app = control_api.create_app(control_state, rerun_recorder, dora_handler)
+    uvicorn_config = uvicorn.Config(app, host=config.http_host, port=config.http_port)
+    server = uvicorn.Server(config=uvicorn_config)
+
+    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread.start()
+
+    while not server.started:
+        time.sleep(NO_DATA_SLEEP_INTERVAL)
+
+    logger.info(f"HTTP server started on {config.http_host}:{config.http_port}")
+    return server
+
+
+def run_inference_loop(
+    model: ACTPolicy,
+    preprocess: Callable,
+    postprocess: Callable,
+    dora_handler: DoraHandler,
+    image_buffer: ImageBuffer,
+    control_state: ControlState,
+) -> None:
+    """Run main inference loop processing agent positions and generating actions."""
+    counter = 0
+    while dora_handler.try_recv() is not None:
+        counter += 1
+    logger.info(f"Flushed {counter} stale data, starting main loop")
+
+    while dora_handler.is_running():
+        if (agent_pos_data := dora_handler.try_recv()) is None:
+            time.sleep(NO_DATA_SLEEP_INTERVAL)
+            continue
+
+        if not control_state.is_running():
+            model.reset()
+            continue
+
+        agent_pos = agent_pos_data.array.to_numpy()
+        state = torch.from_numpy(agent_pos.copy()).float().unsqueeze(0)
+
+        if (latest_image := image_buffer.get()) is None:
+            logger.warning("No image available in buffer, skipping inference step")
+            continue
+
+        image = torch.from_numpy(latest_image).permute(2, 0, 1).float() / 255.0
+        image = image.unsqueeze(0)
+
+        obs = {
+            "observation.state": state,
+            "observation.images.top": image,
+        }
+
+        obs_preprocessed = preprocess(obs)
+
+        with torch.no_grad():
+            action = model.select_action(obs_preprocessed)
+
+        action = postprocess(action)
+
+        action_list = action.squeeze(0).cpu().numpy().tolist()
+        dora_handler.send_action(action_list)
+        logger.debug(f"Sent action: {len(action_list)} values")
+
+
+def main(config: Config) -> None:
+    dora_handler, rerun_recorder = create_handlers(config.rerun_rrd_path)
     logger.info("DoraHandler and RerunClient initialized successfully")
 
-    model_id = get_model_id()
-    logger.info(f"Loading model: {model_id}")
-    model = ACTPolicy.from_pretrained(model_id)
+    logger.info(f"Loading model: {config.model_id}")
+    model = ACTPolicy.from_pretrained(config.model_id)
     model.eval()
 
-    dataset_id = get_dataset_id()
-    logger.info(f"Loading dataset metadata: {dataset_id}")
-    dataset_metadata = LeRobotDatasetMetadata(dataset_id, revision="v3.0")
+    logger.info(f"Loading dataset metadata: {config.dataset_id}")
+    dataset_metadata = LeRobotDatasetMetadata(config.dataset_id, revision="v3.0")
     preprocess, postprocess = make_pre_post_processors(
         model.config, dataset_stats=dataset_metadata.stats
     )
@@ -198,66 +260,31 @@ def main() -> None:
     control_state = ControlState()
     image_buffer = ImageBuffer()
 
-    # Create HTTP app with dependencies
-    app = control_api.create_app(control_state, rerun_recorder, dora_handler)
+    start_image_thread(
+        config,
+        rerun_recorder,
+        dora_handler,
+        image_buffer,
+        control_state,
+    )
 
-    host, port = get_http_host(), get_http_port()
-    config = uvicorn.Config(app, host=host, port=port)
-    server = UvicornServer(config=config)
+    server = start_http_server(config, control_state, rerun_recorder, dora_handler)
 
-    with server.run_in_thread():
-        logger.info(f"HTTP server started on {host}:{port}")
-
-        image_thread = threading.Thread(
-            target=image_logger_thread,
-            args=(rerun_recorder, dora_handler, image_buffer, control_state),
-            daemon=True,
+    try:
+        run_inference_loop(
+            model,
+            preprocess,
+            postprocess,
+            dora_handler,
+            image_buffer,
+            control_state,
         )
-        image_thread.start()
-
-        logger.info("Waiting for first image from MJPEG stream...")
-        first_image = image_buffer.get()
-        logger.info(f"First image received: {first_image.shape}")
-
-        while dora_handler.try_recv() is not None:
-            pass
-        logger.info("Flushed stale data, starting main loop")
-
-        while dora_handler.is_running():
-            if (agent_pos_data := dora_handler.try_recv()) is None:
-                time.sleep(NO_DATA_SLEEP_INTERVAL)
-                continue
-
-            if not control_state.is_running():
-                model.reset()
-                continue
-
-            agent_pos = agent_pos_data.array.to_numpy()
-            state = torch.from_numpy(agent_pos.copy()).float().unsqueeze(0)
-
-            latest_image = image_buffer.get()
-            image = torch.from_numpy(latest_image).permute(2, 0, 1).float() / 255.0
-            image = image.unsqueeze(0)
-
-            obs = {
-                "observation.state": state,
-                "observation.images.top": image,
-            }
-
-            obs_preprocessed = preprocess(obs)
-
-            with torch.no_grad():
-                action = model.select_action(obs_preprocessed)
-
-            action = postprocess(action)
-
-            action_list = action.squeeze(0).cpu().numpy().tolist()
-            dora_handler.send_action(action_list)
-            logger.debug(f"Sent action: {len(action_list)} values")
-
-        image_thread.join(timeout=5.0)
+    finally:
+        server.should_exit = True
+        logger.info("Shutdown signal sent to HTTP server")
 
 
 if __name__ == "__main__":
-    init_logging(console_level=get_python_log_level())
-    main()
+    config = Config()
+    init_logging(console_level=config.python_log_level)
+    main(config)

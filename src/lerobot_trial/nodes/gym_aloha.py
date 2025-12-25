@@ -16,7 +16,6 @@ Note: Images are served via MJPEG HTTP stream instead of Dora channels.
 """
 
 import logging
-import os
 import time
 from dataclasses import asdict, replace
 from pprint import pformat
@@ -30,22 +29,25 @@ from lerobot.configs import parser
 from lerobot.envs.configs import AlohaEnv
 from lerobot.utils.utils import init_logging
 from numpy.typing import NDArray
+from pydantic import computed_field
+from pydantic_settings import BaseSettings
 
 from lerobot_trial.http.mjpeg_server import start_mjpeg_server, update_frame
 
 logger = logging.getLogger(__name__)
 
 
-def get_python_log_level() -> str:
-    return os.getenv("PYTHON_LOG", "INFO")
+class Config(BaseSettings):
+    """Application configuration loaded from environment variables."""
 
+    python_log: str = "INFO"
+    mjpeg_host: str = "localhost"
+    mjpeg_port: int = 8080
 
-def get_mjpeg_host() -> str:
-    return os.getenv("MJPEG_HOST", "localhost")
-
-
-def get_mjpeg_port() -> int:
-    return int(os.getenv("MJPEG_PORT", "8080"))
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def python_log_level(self) -> str:
+        return self.python_log.upper()
 
 
 def make_env(cfg: AlohaEnv) -> gym.Env:
@@ -104,6 +106,7 @@ def main(cfg: AlohaEnv) -> None:
 
 
 if __name__ == "__main__":
-    init_logging(console_level=get_python_log_level())
-    start_mjpeg_server(get_mjpeg_host(), get_mjpeg_port())
+    config = Config()
+    init_logging(console_level=config.python_log_level)
+    start_mjpeg_server(config.mjpeg_host, config.mjpeg_port)
     main()
