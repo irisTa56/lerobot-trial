@@ -10,10 +10,9 @@
 
 import logging
 import os
-from typing import Protocol, cast
+from typing import Annotated, Protocol, cast
 
-from fastapi import FastAPI, status
-from starlette.datastructures import State
+from fastapi import Depends, FastAPI, status
 
 from lerobot_trial._rust import DoraHandler, RerunClient
 from lerobot_trial.control_state import ControlState
@@ -35,7 +34,6 @@ app = FastAPI(
     title="LeRobot Control Server",
     description="HTTP server for controlling LeRobot control loop",
 )
-app.state = State()
 
 
 def get_state() -> AppStateProtocol:
@@ -62,9 +60,8 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/control/start", status_code=status.HTTP_204_NO_CONTENT)
-async def start_control() -> None:
+async def start_control(state: Annotated[AppStateProtocol, Depends(get_state)]) -> None:
     """Start control loop and start recording."""
-    state = get_state()
 
     if state.control_state.start():
         logger.info("Control loop started via HTTP")
@@ -75,9 +72,8 @@ async def start_control() -> None:
 
 
 @app.post("/control/stop", status_code=status.HTTP_204_NO_CONTENT)
-async def stop_control() -> None:
+async def stop_control(state: Annotated[AppStateProtocol, Depends(get_state)]) -> None:
     """Stop control loop and stop recording."""
-    state = get_state()
 
     if state.control_state.stop():
         logger.info("Control loop stopped via HTTP")
@@ -88,9 +84,10 @@ async def stop_control() -> None:
 
 
 @app.post("/control/reset", status_code=status.HTTP_204_NO_CONTENT)
-async def reset_environment() -> None:
+async def reset_environment(
+    state: Annotated[AppStateProtocol, Depends(get_state)],
+) -> None:
     """Reset the gym environment."""
-    state = get_state()
 
     state.dora_handler.send_reset()
     logger.info("Reset command sent to gym_aloha")
