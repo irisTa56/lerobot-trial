@@ -198,11 +198,11 @@ def main() -> None:
     control_state = ControlState()
     image_buffer = ImageBuffer()
 
-    # Set state for HTTP app
-    http_app.set_state(control_state, rerun_recorder, dora_handler)
+    # Create HTTP app with dependencies
+    app = http_app.create_app(control_state, rerun_recorder, dora_handler)
 
     host, port = get_http_host(), get_http_port()
-    config = uvicorn.Config(http_app.app, host=host, port=port)
+    config = uvicorn.Config(app, host=host, port=port)
     server = UvicornServer(config=config)
 
     with server.run_in_thread():
