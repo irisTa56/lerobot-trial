@@ -8,15 +8,12 @@
 - POST `/control/reset`: Reset the gym environment
 """
 
-import logging
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
 
 from lerobot_trial._rust import DoraHandler, RerunClient
 from lerobot_trial.control_state import ControlState
-
-logger = logging.getLogger(__name__)
 
 
 def create_app(
