@@ -98,6 +98,10 @@ def get_http_port() -> int:
     return int(os.getenv("HTTP_PORT", "8000"))
 
 
+def get_rerun_rrd_path() -> str | None:
+    return os.getenv("RERUN_RRD_PATH")
+
+
 class UvicornServer(uvicorn.Server):
     """Uvicorn server for running in background thread."""
 
@@ -173,7 +177,8 @@ def image_logger_thread(
 
 
 def main() -> None:
-    dora_handler, rerun_recorder = create_handlers()
+    rrd_path = get_rerun_rrd_path()
+    dora_handler, rerun_recorder = create_handlers(rrd_path)
     logger.info("DoraHandler and RerunClient initialized successfully")
 
     model_id = get_model_id()

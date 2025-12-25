@@ -25,8 +25,9 @@ mod _rust {
 
     /// Create DoraHandler and RerunClient together, sharing the same log channel
     #[pyfunction]
-    fn create_handlers() -> PyResult<(PyDoraHandler, PyRerunClient)> {
-        let (rerun, log_tx) = RerunClient::init().map_err(|e| {
+    #[pyo3(signature = (rrd_path=None))]
+    fn create_handlers(rrd_path: Option<String>) -> PyResult<(PyDoraHandler, PyRerunClient)> {
+        let (rerun, log_tx) = RerunClient::init(rrd_path).map_err(|e| {
             PyRuntimeError::new_err(format!("Failed to initialize RerunClient: {}", e))
         })?;
 
@@ -103,12 +104,11 @@ mod _rust {
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to log encoded image: {}", e)))
         }
 
-        #[pyo3(signature = (rrd_path=None))]
-        fn start_recording(&self, rrd_path: Option<String>) -> PyResult<()> {
+        fn start_recording(&self) -> PyResult<()> {
             self.inner
                 .write()
                 .unwrap()
-                .start_recording(rrd_path)
+                .start_recording()
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to start recording: {}", e)))
         }
 

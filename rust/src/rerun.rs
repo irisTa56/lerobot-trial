@@ -15,7 +15,7 @@ type BoxedError = Box<dyn std::error::Error>;
 pub(crate) enum LogRequest {
     LogEncodedImage { path: String, data: Vec<u8> },
     LogScalars { path: String, values: Vec<f64> },
-    StartRecording { rrd_path: Option<PathBuf> },
+    StartRecording,
     StopRecording,
 }
 
@@ -28,9 +28,11 @@ pub(crate) struct RerunClient {
 impl RerunClient {
     const APP_NAME: &str = "lerobot_trial";
 
-    pub(crate) fn init() -> Result<(Self, Sender<LogRequest>), BoxedError> {
+    pub(crate) fn init(
+        rrd_path: Option<impl Into<PathBuf>>,
+    ) -> Result<(Self, Sender<LogRequest>), BoxedError> {
         let (log_tx, log_rx) = mpsc::channel();
-        let mut handler = StreamHandler::default();
+        let mut handler = StreamHandler::new(rrd_path);
 
         let log_handle = thread::spawn(move || {
             while let Ok(request) = log_rx.recv() {
@@ -48,13 +50,8 @@ impl RerunClient {
         Ok((client, log_tx))
     }
 
-    pub(crate) fn start_recording(
-        &mut self,
-        rrd_path: Option<impl Into<PathBuf>>,
-    ) -> Result<(), BoxedError> {
-        self.send_log_request(LogRequest::StartRecording {
-            rrd_path: rrd_path.map(Into::into),
-        })
+    pub(crate) fn start_recording(&mut self) -> Result<(), BoxedError> {
+        self.send_log_request(LogRequest::StartRecording)
     }
 
     pub(crate) fn stop_recording(&mut self) -> Result<(), BoxedError> {
@@ -71,16 +68,24 @@ impl RerunClient {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct StreamHandler {
     stream: Option<RecordingStream>,
+    rrd_path: Option<PathBuf>,
 }
 
 impl StreamHandler {
+    fn new(rrd_path: Option<impl Into<PathBuf>>) -> Self {
+        Self {
+            stream: None,
+            rrd_path: rrd_path.map(Into::into),
+        }
+    }
+
     fn process_request(&mut self, request: LogRequest) -> Result<(), BoxedError> {
         match (&self.stream, request) {
-            (None, LogRequest::StartRecording { rrd_path }) => {
-                self.start_recording(rrd_path)?;
+            (None, LogRequest::StartRecording) => {
+                self.start_recording()?;
             }
             (Some(stream), LogRequest::StopRecording) => {
                 stream.flush_blocking()?;
@@ -92,7 +97,7 @@ impl StreamHandler {
             (Some(stream), LogRequest::LogScalars { path, values }) => {
                 stream.log(path, &Scalars::new(values))?;
             }
-            (Some(_), LogRequest::StartRecording { .. }) => {
+            (Some(_), LogRequest::StartRecording) => {
                 return Err("Recording is already running".into());
             }
             (None, LogRequest::StopRecording) => {
@@ -104,11 +109,11 @@ impl StreamHandler {
         Ok(())
     }
 
-    fn start_recording(&mut self, rrd_path: Option<PathBuf>) -> Result<(), BoxedError> {
+    fn start_recording(&mut self) -> Result<(), BoxedError> {
         let builder = RecordingStreamBuilder::new(RerunClient::APP_NAME)
             .batcher_config(ChunkBatcherConfig::LOW_LATENCY);
 
-        let stream = match rrd_path {
+        let stream = match &self.rrd_path {
             Some(path) => builder.set_sinks((GrpcSink::default(), FileSink::new(path)?))?,
             None => builder.connect_grpc()?,
         };

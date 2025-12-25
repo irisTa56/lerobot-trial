@@ -9,7 +9,6 @@
 """
 
 import logging
-import os
 from typing import Annotated, Protocol, cast
 
 from fastapi import Depends, FastAPI, status
@@ -18,10 +17,6 @@ from lerobot_trial._rust import DoraHandler, RerunClient
 from lerobot_trial.control_state import ControlState
 
 logger = logging.getLogger(__name__)
-
-
-def get_rerun_rrd_path() -> str | None:
-    return os.getenv("RERUN_RRD_PATH")
 
 
 class AppStateProtocol(Protocol):
@@ -36,21 +31,19 @@ app = FastAPI(
 )
 
 
-def get_state() -> AppStateProtocol:
-    """Get application state with type safety."""
-    return cast(AppStateProtocol, app.state)
-
-
 def set_state(
     control_state: ControlState,
     rerun_recorder: RerunClient,
     dora_handler: DoraHandler,
 ) -> None:
-    """Set application state."""
-    state = cast(AppStateProtocol, app.state)
+    state = _get_state()
     state.control_state = control_state
     state.rerun_recorder = rerun_recorder
     state.dora_handler = dora_handler
+
+
+def _get_state() -> AppStateProtocol:
+    return cast(AppStateProtocol, app.state)
 
 
 @app.get("/health")
@@ -60,19 +53,23 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/control/start", status_code=status.HTTP_204_NO_CONTENT)
-async def start_control(state: Annotated[AppStateProtocol, Depends(get_state)]) -> None:
+async def start_control(
+    state: Annotated[AppStateProtocol, Depends(_get_state)],
+) -> None:
     """Start control loop and start recording."""
 
     if state.control_state.start():
         logger.info("Control loop started via HTTP")
-        state.rerun_recorder.start_recording(get_rerun_rrd_path())
+        state.rerun_recorder.start_recording()
         logger.info("Rerun recording started")
     else:
         logger.info("Control loop start requested but already running")
 
 
 @app.post("/control/stop", status_code=status.HTTP_204_NO_CONTENT)
-async def stop_control(state: Annotated[AppStateProtocol, Depends(get_state)]) -> None:
+async def stop_control(
+    state: Annotated[AppStateProtocol, Depends(_get_state)],
+) -> None:
     """Stop control loop and stop recording."""
 
     if state.control_state.stop():
@@ -85,7 +82,7 @@ async def stop_control(state: Annotated[AppStateProtocol, Depends(get_state)]) -
 
 @app.post("/control/reset", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_environment(
-    state: Annotated[AppStateProtocol, Depends(get_state)],
+    state: Annotated[AppStateProtocol, Depends(_get_state)],
 ) -> None:
     """Reset the gym environment."""
 
