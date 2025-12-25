@@ -2,7 +2,7 @@
 
 ## HTTP Endpoints
 
-- GET `/health`: Health check endpoint
+- GET `/status`: Get control loop status
 - POST `/control/start`: Start control loop and recording
 - POST `/control/stop`: Stop control loop and recording
 - POST `/control/reset`: Reset the gym environment
@@ -11,7 +11,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, status
+from fastapi import Depends, FastAPI, HTTPException, status
 
 from lerobot_trial._rust import DoraHandler, RerunClient
 from lerobot_trial.control_state import ControlState
@@ -49,43 +49,48 @@ def create_app(
     def get_dora_handler() -> DoraHandler:
         return dora_handler
 
-    @app.get("/health")
-    async def health() -> dict[str, str]:
-        """Health check endpoint."""
-        return {"status": "healthy"}
+    @app.get("/status")
+    async def get_status(
+        state: Annotated[ControlState, Depends(get_control_state)],
+    ) -> dict[str, bool]:
+        """Get control loop status."""
+        return {"running": state.is_running()}
 
-    @app.post("/control/start", status_code=status.HTTP_204_NO_CONTENT)
+    @app.post("/control/start")
     async def start_control(
         state: Annotated[ControlState, Depends(get_control_state)],
         recorder: Annotated[RerunClient, Depends(get_rerun_recorder)],
-    ) -> None:
+    ) -> dict[str, bool]:
         """Start control loop and start recording."""
-        if state.start():
-            logger.info("Control loop started via HTTP")
-            recorder.start_recording()
-            logger.info("Rerun recording started")
-        else:
-            logger.info("Control loop start requested but already running")
+        if not state.start():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Control loop is already running",
+            )
+        recorder.start_recording()
+        return {"running": True}
 
-    @app.post("/control/stop", status_code=status.HTTP_204_NO_CONTENT)
+    @app.post("/control/stop")
     async def stop_control(
         state: Annotated[ControlState, Depends(get_control_state)],
         recorder: Annotated[RerunClient, Depends(get_rerun_recorder)],
-    ) -> None:
+    ) -> dict[str, bool]:
         """Stop control loop and stop recording."""
-        if state.stop():
-            logger.info("Control loop stopped via HTTP")
-            recorder.stop_recording()
-            logger.info("Rerun recording stopped")
-        else:
-            logger.info("Control loop stop requested but already stopped")
+        if not state.stop():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Control loop is already stopped",
+            )
+        recorder.stop_recording()
+        return {"running": False}
 
-    @app.post("/control/reset", status_code=status.HTTP_204_NO_CONTENT)
+    @app.post("/control/reset")
     async def reset_environment(
+        state: Annotated[ControlState, Depends(get_control_state)],
         handler: Annotated[DoraHandler, Depends(get_dora_handler)],
-    ) -> None:
+    ) -> dict[str, bool]:
         """Reset the gym environment."""
         handler.send_reset()
-        logger.info("Reset command sent to gym_aloha")
+        return {"running": state.is_running()}
 
     return app
