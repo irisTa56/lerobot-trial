@@ -18,7 +18,7 @@ Note: Images are served via MJPEG HTTP stream instead of Dora channels.
 import logging
 import os
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pprint import pformat
 
 import cv2
@@ -47,6 +47,7 @@ def make_env(cfg: AlohaEnv) -> gym.Env:
 
 @parser.wrap()
 def main(cfg: AlohaEnv) -> None:
+    cfg = replace(cfg, max_parallel_tasks=-1)  # Disable internal episode termination
     logger.info(f"Start Gym-ALOHA node with:\n{pformat(asdict(cfg))}")
 
     node = Node()
@@ -54,17 +55,13 @@ def main(cfg: AlohaEnv) -> None:
     env = make_env(cfg)
     obs, _info = env.reset()
     action = obs["agent_pos"]
-    done = False
 
     for event in node:
         match (event["type"], event.get("id")):
             case ("INPUT", "tick"):
                 start = time.perf_counter()
 
-                obs, _reward, terminated, truncated, _info = env.step(action)
-                if (terminated or truncated) and not done:
-                    logger.info(f"Episode done: {terminated=}, {truncated=}")
-                    done = True
+                obs, _reward, _terminated, _truncated, _info = env.step(action)
 
                 agent_pos: NDArray = obs["agent_pos"]
                 node.send_output(
@@ -73,8 +70,7 @@ def main(cfg: AlohaEnv) -> None:
                     {"shape": list(agent_pos.shape)},
                 )
 
-                image = obs["pixels"]["top"]
-                image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                image_bgr = cv2.cvtColor(obs["pixels"]["top"], cv2.COLOR_RGB2BGR)
                 update_frame(image_bgr)
 
                 logger.debug(f"Step took {time.perf_counter() - start:.4f} secs.")
@@ -84,11 +80,10 @@ def main(cfg: AlohaEnv) -> None:
                 logger.debug(f"Received action: shape={action.shape}")
 
             case ("INPUT", "reset"):
-                logger.info("Received reset command.")
+                logger.debug("Received reset command.")
                 obs, _ = env.reset()
                 action = obs["agent_pos"]
-                done = False
-                logger.info("Environment reset complete.")
+                logger.debug("Environment reset complete.")
 
             case ("STOP", _):
                 logger.info("Received stop signal from Dora.")
