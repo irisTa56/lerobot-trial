@@ -46,7 +46,7 @@ from numpy.typing import NDArray
 
 from lerobot_trial._rust import DoraHandler, RerunClient, create_handlers
 from lerobot_trial.control_state import ControlState
-from lerobot_trial.http import app as http_app
+from lerobot_trial.http import control_api
 
 NO_DATA_SLEEP_INTERVAL = 5e-3  # seconds
 
@@ -199,7 +199,7 @@ def main() -> None:
     image_buffer = ImageBuffer()
 
     # Create HTTP app with dependencies
-    app = http_app.create_app(control_state, rerun_recorder, dora_handler)
+    app = control_api.create_app(control_state, rerun_recorder, dora_handler)
 
     host, port = get_http_host(), get_http_port()
     config = uvicorn.Config(app, host=host, port=port)
