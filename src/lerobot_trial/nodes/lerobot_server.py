@@ -45,8 +45,8 @@ from lerobot.utils.utils import init_logging
 from numpy.typing import NDArray
 
 from lerobot_trial._rust import DoraHandler, RerunClient, create_handlers
+from lerobot_trial.control_state import ControlState
 from lerobot_trial.http import app as http_app
-from lerobot_trial.http.app import ControlState
 
 NO_DATA_SLEEP_INTERVAL = 5e-3  # seconds
 
