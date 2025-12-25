@@ -53,25 +53,6 @@ NO_DATA_SLEEP_INTERVAL = 5e-3  # seconds
 logger = logging.getLogger(__name__)
 
 
-class ImageBuffer:
-    """Thread-safe buffer for storing the latest image from MJPEG stream."""
-
-    def __init__(self) -> None:
-        self._image: NDArray | None = None
-        self._cond = threading.Condition()
-
-    def update(self, image: NDArray) -> None:
-        with self._cond:
-            self._image = image
-            self._cond.notify_all()
-
-    def get(self) -> NDArray:
-        with self._cond:
-            while self._image is None:
-                self._cond.wait()
-            return self._image
-
-
 def get_python_log_level() -> str:
     return os.getenv("PYTHON_LOG", "INFO").upper()
 
@@ -100,6 +81,25 @@ def get_http_port() -> int:
 
 def get_rerun_rrd_path() -> str | None:
     return os.getenv("RERUN_RRD_PATH")
+
+
+class ImageBuffer:
+    """Thread-safe buffer for storing the latest image from MJPEG stream."""
+
+    def __init__(self) -> None:
+        self._image: NDArray | None = None
+        self._cond = threading.Condition()
+
+    def update(self, image: NDArray) -> None:
+        with self._cond:
+            self._image = image
+            self._cond.notify_all()
+
+    def get(self) -> NDArray:
+        with self._cond:
+            while self._image is None:
+                self._cond.wait()
+            return self._image
 
 
 class UvicornServer(uvicorn.Server):

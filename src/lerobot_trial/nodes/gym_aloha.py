@@ -36,6 +36,18 @@ from lerobot_trial.http.mjpeg_server import start_mjpeg_server, update_frame
 logger = logging.getLogger(__name__)
 
 
+def get_python_log_level() -> str:
+    return os.getenv("PYTHON_LOG", "INFO")
+
+
+def get_mjpeg_host() -> str:
+    return os.getenv("MJPEG_HOST", "localhost")
+
+
+def get_mjpeg_port() -> int:
+    return int(os.getenv("MJPEG_PORT", "8080"))
+
+
 def make_env(cfg: AlohaEnv) -> gym.Env:
     """Create Gym-ALOHA environment from configuration."""
     return gym.make(
@@ -92,8 +104,6 @@ def main(cfg: AlohaEnv) -> None:
 
 
 if __name__ == "__main__":
-    init_logging(console_level=os.getenv("PYTHON_LOG", "INFO"))
-    mjpeg_host = os.getenv("MJPEG_HOST", "localhost")
-    mjpeg_port = int(os.getenv("MJPEG_PORT", "8080"))
-    start_mjpeg_server(mjpeg_host, mjpeg_port)
+    init_logging(console_level=get_python_log_level())
+    start_mjpeg_server(get_mjpeg_host(), get_mjpeg_port())
     main()
