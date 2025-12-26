@@ -1,15 +1,21 @@
 use rerun::{
-    EncodedImage, RecordingStream, RecordingStreamBuilder, Scalars,
+    DEFAULT_CONNECT_URL, EncodedImage, RecordingStream, RecordingStreamBuilder, Scalars,
+    external::re_uri::ProxyUri,
     log::ChunkBatcherConfig,
-    sink::{FileSink, GrpcSink},
+    sink::{FileSink, GrpcSink, LogSink},
 };
 use std::{
     path::PathBuf,
+    str::FromStr,
     sync::mpsc::{self, Sender},
     thread::{self, JoinHandle},
+    time::Duration,
 };
 
 type BoxedError = Box<dyn std::error::Error>;
+
+const APP_NAME: &str = "lerobot_trial";
+const DEFAULT_FLUSH_TICK_MILLIS: u64 = 100;
 
 #[derive(Debug)]
 pub(crate) enum LogRequest {
@@ -22,17 +28,21 @@ pub(crate) enum LogRequest {
 #[derive(Debug)]
 pub(crate) struct RerunClient {
     log_tx: Sender<LogRequest>,
-    log_handle: Option<JoinHandle<()>>,
+    log_handle: JoinHandle<()>,
 }
 
 impl RerunClient {
-    const APP_NAME: &str = "lerobot_trial";
-
     pub(crate) fn init(
-        rrd_path: Option<impl Into<PathBuf>>,
+        grpc_url: Option<String>,
+        rrd_path: Option<PathBuf>,
+        flush_tick_millis: Option<u64>,
     ) -> Result<(Self, Sender<LogRequest>), BoxedError> {
+        let grpc_url = grpc_url.unwrap_or_else(|| DEFAULT_CONNECT_URL.into());
+        let flush_tick_millis = flush_tick_millis.unwrap_or(DEFAULT_FLUSH_TICK_MILLIS);
+        let flush_tick = Duration::from_millis(flush_tick_millis);
+        let mut handler = StreamHandler::new(grpc_url, rrd_path, flush_tick);
+
         let (log_tx, log_rx) = mpsc::channel();
-        let mut handler = StreamHandler::new(rrd_path);
 
         let log_handle = thread::spawn(move || {
             while let Ok(request) = log_rx.recv() {
@@ -44,7 +54,7 @@ impl RerunClient {
 
         let client = Self {
             log_tx: log_tx.clone(),
-            log_handle: Some(log_handle),
+            log_handle,
         };
 
         Ok((client, log_tx))
@@ -64,21 +74,25 @@ impl RerunClient {
     }
 
     pub(crate) fn is_running(&self) -> bool {
-        self.log_handle.as_ref().is_some_and(|h| !h.is_finished())
+        !self.log_handle.is_finished()
     }
 }
 
 #[derive(Debug)]
 struct StreamHandler {
     stream: Option<RecordingStream>,
+    grpc_url: String,
     rrd_path: Option<PathBuf>,
+    flush_tick: Duration,
 }
 
 impl StreamHandler {
-    fn new(rrd_path: Option<impl Into<PathBuf>>) -> Self {
+    fn new(grpc_url: String, rrd_path: Option<PathBuf>, flush_tick: Duration) -> Self {
         Self {
             stream: None,
-            rrd_path: rrd_path.map(Into::into),
+            grpc_url,
+            rrd_path,
+            flush_tick,
         }
     }
 
@@ -110,13 +124,20 @@ impl StreamHandler {
     }
 
     fn start_recording(&mut self) -> Result<(), BoxedError> {
-        let builder = RecordingStreamBuilder::new(RerunClient::APP_NAME)
-            .batcher_config(ChunkBatcherConfig::LOW_LATENCY);
+        let grpc_uri = ProxyUri::from_str(&self.grpc_url)?;
+        let mut sinks: Vec<Box<dyn LogSink>> = vec![Box::new(GrpcSink::new(grpc_uri))];
 
-        let stream = match &self.rrd_path {
-            Some(path) => builder.set_sinks((GrpcSink::default(), FileSink::new(path)?))?,
-            None => builder.connect_grpc()?,
+        if let Some(path) = &self.rrd_path {
+            sinks.push(Box::new(FileSink::new(path)?));
+        }
+
+        let config = ChunkBatcherConfig {
+            flush_tick: self.flush_tick,
+            ..Default::default()
         };
+        let builder = RecordingStreamBuilder::new(APP_NAME).batcher_config(config);
+
+        let stream = builder.set_sinks(sinks)?;
 
         self.stream = Some(stream);
         Ok(())

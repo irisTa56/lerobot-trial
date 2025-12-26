@@ -63,7 +63,9 @@ class Config(BaseSettings):
     dataset_id: str = "lerobot/aloha_sim_insertion_human"
     http_host: str = "0.0.0.0"
     http_port: int = 8000
+    rerun_grpc_url: str | None = None
     rerun_rrd_path: str | None = None
+    rerun_flush_tick_millis: int | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -242,7 +244,11 @@ def run_inference_loop(
 
 
 def main(config: Config) -> None:
-    dora_handler, rerun_recorder = create_handlers(config.rerun_rrd_path)
+    dora_handler, rerun_recorder = create_handlers(
+        grpc_url=config.rerun_grpc_url,
+        rrd_path=config.rerun_rrd_path,
+        flush_tick_millis=config.rerun_flush_tick_millis,
+    )
     logger.info("DoraHandler and RerunClient initialized successfully")
 
     logger.info(f"Loading model: {config.model_id}")

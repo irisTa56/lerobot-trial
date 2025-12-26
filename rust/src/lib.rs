@@ -13,7 +13,10 @@ mod _rust {
     use dora_node_api::arrow::array::{BooleanArray, Float64Array};
     use pyo3::{exceptions::PyRuntimeError, prelude::*};
     use pyo3_arrow::{PyArray, error::PyArrowResult};
-    use std::sync::{Arc, RwLock};
+    use std::{
+        path::PathBuf,
+        sync::{Arc, RwLock},
+    };
 
     const ACTION_OUTPUT_ID: &str = "action";
     const RESET_OUTPUT_ID: &str = "reset";
@@ -25,11 +28,16 @@ mod _rust {
 
     /// Create DoraHandler and RerunClient together, sharing the same log channel
     #[pyfunction]
-    #[pyo3(signature = (rrd_path=None))]
-    fn create_handlers(rrd_path: Option<String>) -> PyResult<(PyDoraHandler, PyRerunClient)> {
-        let (rerun, log_tx) = RerunClient::init(rrd_path).map_err(|e| {
-            PyRuntimeError::new_err(format!("Failed to initialize RerunClient: {}", e))
-        })?;
+    #[pyo3(signature = (grpc_url=None, rrd_path=None, flush_tick_millis=None))]
+    fn create_handlers(
+        grpc_url: Option<String>,
+        rrd_path: Option<PathBuf>,
+        flush_tick_millis: Option<u64>,
+    ) -> PyResult<(PyDoraHandler, PyRerunClient)> {
+        let (rerun, log_tx) =
+            RerunClient::init(grpc_url, rrd_path, flush_tick_millis).map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to initialize RerunClient: {}", e))
+            })?;
 
         let dora = DoraHandler::new(log_tx).map_err(|e| {
             PyRuntimeError::new_err(format!("Failed to initialize DoraHandler: {}", e))
