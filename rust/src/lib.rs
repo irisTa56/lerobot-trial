@@ -114,18 +114,26 @@ mod _rust {
 
         fn start_recording(&self) -> PyResult<()> {
             self.inner
-                .write()
+                .read()
                 .unwrap()
-                .start_recording()
+                .send_log_request(LogRequest::StartRecording)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to start recording: {}", e)))
         }
 
         fn stop_recording(&self) -> PyResult<()> {
             self.inner
-                .write()
+                .read()
                 .unwrap()
-                .stop_recording()
+                .send_log_request(LogRequest::StopRecording)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to stop recording: {}", e)))
+        }
+
+        fn shutdown(&self) -> PyResult<()> {
+            self.inner
+                .read()
+                .unwrap()
+                .send_log_request(LogRequest::Shutdown)
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to shutdown: {}", e)))
         }
 
         fn is_running(&self) -> bool {

@@ -23,6 +23,7 @@ pub(crate) enum LogRequest {
     LogScalars { path: String, values: Vec<f64> },
     StartRecording,
     StopRecording,
+    Shutdown,
 }
 
 #[derive(Debug)]
@@ -40,14 +41,16 @@ impl RerunClient {
         let grpc_url = grpc_url.unwrap_or_else(|| DEFAULT_CONNECT_URL.into());
         let flush_tick_millis = flush_tick_millis.unwrap_or(DEFAULT_FLUSH_TICK_MILLIS);
         let flush_tick = Duration::from_millis(flush_tick_millis);
-        let mut handler = StreamHandler::new(grpc_url, rrd_path, flush_tick);
+        let mut handler = StreamHandler::try_new(grpc_url, rrd_path, flush_tick)?;
 
         let (log_tx, log_rx) = mpsc::channel();
 
         let log_handle = thread::spawn(move || {
             while let Ok(request) = log_rx.recv() {
-                if let Err(e) = handler.process_request(request) {
-                    eprintln!("Failed to process request: {}", e);
+                match handler.process_request(request) {
+                    Ok(true) => continue,
+                    Ok(false) => break,
+                    Err(e) => eprintln!("Failed to process request: {:?}", e),
                 }
             }
         });
@@ -58,14 +61,6 @@ impl RerunClient {
         };
 
         Ok((client, log_tx))
-    }
-
-    pub(crate) fn start_recording(&mut self) -> Result<(), BoxedError> {
-        self.send_log_request(LogRequest::StartRecording)
-    }
-
-    pub(crate) fn stop_recording(&mut self) -> Result<(), BoxedError> {
-        self.send_log_request(LogRequest::StopRecording)
     }
 
     pub(crate) fn send_log_request(&self, request: LogRequest) -> Result<(), BoxedError> {
@@ -80,66 +75,88 @@ impl RerunClient {
 
 #[derive(Debug)]
 struct StreamHandler {
-    stream: Option<RecordingStream>,
+    stream: RecordingStream,
     grpc_url: String,
     rrd_path: Option<PathBuf>,
     flush_tick: Duration,
+    recording: bool,
 }
 
 impl StreamHandler {
-    fn new(grpc_url: String, rrd_path: Option<PathBuf>, flush_tick: Duration) -> Self {
-        Self {
-            stream: None,
+    fn try_new(
+        grpc_url: String,
+        rrd_path: Option<PathBuf>,
+        flush_tick: Duration,
+    ) -> Result<Self, BoxedError> {
+        let stream = build_recording_stream(&grpc_url, None, flush_tick)?;
+
+        Ok(Self {
+            stream,
             grpc_url,
             rrd_path,
             flush_tick,
-        }
+            recording: false,
+        })
     }
 
-    fn process_request(&mut self, request: LogRequest) -> Result<(), BoxedError> {
-        match (&self.stream, request) {
-            (None, LogRequest::StartRecording) => {
-                self.start_recording()?;
+    fn process_request(&mut self, request: LogRequest) -> Result<bool, BoxedError> {
+        match request {
+            LogRequest::LogEncodedImage { path, data } => {
+                let image = EncodedImage::from_file_contents(data);
+                if self.recording {
+                    self.stream.log(path, &image)?;
+                } else {
+                    // Log as static data to reduce memory usage in the viewer
+                    self.stream.log_static(path, &image)?;
+                }
             }
-            (Some(stream), LogRequest::StopRecording) => {
-                stream.flush_blocking()?;
-                self.stream = None;
+            LogRequest::LogScalars { path, values } => {
+                let scalars = Scalars::new(values);
+                self.stream.log(path, &scalars)?;
             }
-            (Some(stream), LogRequest::LogEncodedImage { path, data }) => {
-                stream.log(path, &EncodedImage::from_file_contents(data))?;
+            LogRequest::StartRecording => self.reset_stream(true)?,
+            LogRequest::StopRecording => self.reset_stream(false)?,
+            LogRequest::Shutdown => {
+                self.stream.flush_blocking()?;
+                return Ok(false);
             }
-            (Some(stream), LogRequest::LogScalars { path, values }) => {
-                stream.log(path, &Scalars::new(values))?;
-            }
-            (Some(_), LogRequest::StartRecording) => {
-                return Err("Recording is already running".into());
-            }
-            (None, LogRequest::StopRecording) => {
-                return Err("Recording is not running".into());
-            }
-            _ => (),
         }
 
+        Ok(true)
+    }
+
+    fn reset_stream(&mut self, recording: bool) -> Result<(), BoxedError> {
+        if recording == self.recording {
+            return Err(format!("Recording state is already {}", recording).into());
+        }
+
+        self.stream.flush_blocking()?;
+        self.stream = build_recording_stream(
+            &self.grpc_url,
+            self.rrd_path.as_ref().filter(|_| recording),
+            self.flush_tick,
+        )?;
+        self.recording = recording;
         Ok(())
     }
+}
 
-    fn start_recording(&mut self) -> Result<(), BoxedError> {
-        let grpc_uri = ProxyUri::from_str(&self.grpc_url)?;
-        let mut sinks: Vec<Box<dyn LogSink>> = vec![Box::new(GrpcSink::new(grpc_uri))];
+fn build_recording_stream(
+    grpc_url: &str,
+    rrd_path: Option<&PathBuf>,
+    flush_tick: Duration,
+) -> Result<RecordingStream, BoxedError> {
+    let grpc_uri = ProxyUri::from_str(grpc_url)?;
+    let mut sinks: Vec<Box<dyn LogSink>> = vec![Box::new(GrpcSink::new(grpc_uri))];
 
-        if let Some(path) = &self.rrd_path {
-            sinks.push(Box::new(FileSink::new(path)?));
-        }
-
-        let config = ChunkBatcherConfig {
-            flush_tick: self.flush_tick,
-            ..Default::default()
-        };
-        let builder = RecordingStreamBuilder::new(APP_NAME).batcher_config(config);
-
-        let stream = builder.set_sinks(sinks)?;
-
-        self.stream = Some(stream);
-        Ok(())
+    if let Some(path) = rrd_path {
+        sinks.push(Box::new(FileSink::new(path)?));
     }
+
+    let config = ChunkBatcherConfig {
+        flush_tick,
+        ..Default::default()
+    };
+    let builder = RecordingStreamBuilder::new(APP_NAME).batcher_config(config);
+    Ok(builder.set_sinks(sinks)?)
 }

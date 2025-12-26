@@ -99,7 +99,6 @@ def image_logger_thread(
     rerun_recorder: RerunClient,
     dora_handler: DoraHandler,
     image_buffer: ImageBuffer,
-    control_state: ControlState,
 ) -> None:
     """Thread for reading image data from MJPEG stream and logging to Rerun."""
     logger.info(f"Opening MJPEG stream: {stream_url}")
@@ -119,9 +118,6 @@ def image_logger_thread(
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image_buffer.update(frame_rgb)
-
-            if not control_state.is_running():
-                continue
 
             success, jpeg_buffer = cv2.imencode(
                 ".jpg", frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 75]
@@ -148,7 +144,6 @@ def start_image_thread(
     rerun_recorder: RerunClient,
     dora_handler: DoraHandler,
     image_buffer: ImageBuffer,
-    control_state: ControlState,
 ) -> threading.Thread:
     """Start image logger thread and wait for first image."""
     image_thread = threading.Thread(
@@ -158,7 +153,6 @@ def start_image_thread(
             rerun_recorder,
             dora_handler,
             image_buffer,
-            control_state,
         ),
         daemon=True,
     )
@@ -271,7 +265,6 @@ def main(config: Config) -> None:
         rerun_recorder,
         dora_handler,
         image_buffer,
-        control_state,
     )
 
     server = start_http_server(config, control_state, rerun_recorder, dora_handler)
@@ -286,8 +279,10 @@ def main(config: Config) -> None:
             control_state,
         )
     finally:
+        logger.info("Shutting down...")
         server.should_exit = True
-        logger.info("Shutdown signal sent to HTTP server")
+        rerun_recorder.shutdown()
+        logger.info("Shutdown complete")
 
 
 if __name__ == "__main__":
