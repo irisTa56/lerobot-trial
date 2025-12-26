@@ -1,3 +1,4 @@
+use image::{ExtendedColorType, ImageBuffer, Rgb, codecs::jpeg::JpegEncoder};
 use rerun::{
     DEFAULT_CONNECT_URL, EncodedImage, RecordingStream, RecordingStreamBuilder, Scalars,
     external::re_uri::ProxyUri,
@@ -5,6 +6,7 @@ use rerun::{
     sink::{FileSink, GrpcSink, LogSink},
 };
 use std::{
+    io::Cursor,
     path::PathBuf,
     str::FromStr,
     sync::mpsc::{self, Sender},
@@ -19,8 +21,17 @@ const DEFAULT_FLUSH_TICK_MILLIS: u64 = 100;
 
 #[derive(Debug)]
 pub(crate) enum LogRequest {
-    LogEncodedImage { path: String, data: Vec<u8> },
-    LogScalars { path: String, values: Vec<f64> },
+    LogRgbImage {
+        path: String,
+        data: Vec<u8>,
+        width: u32,
+        height: u32,
+        quality: u8,
+    },
+    LogScalars {
+        path: String,
+        values: Vec<f64>,
+    },
     StartRecording,
     StopRecording,
     Shutdown,
@@ -101,8 +112,15 @@ impl StreamHandler {
 
     fn process_request(&mut self, request: LogRequest) -> Result<bool, BoxedError> {
         match request {
-            LogRequest::LogEncodedImage { path, data } => {
-                let image = EncodedImage::from_file_contents(data);
+            LogRequest::LogRgbImage {
+                path,
+                data,
+                width,
+                height,
+                quality,
+            } => {
+                let jpeg_data = encode_rgb_to_jpeg(&data, width, height, quality)?;
+                let image = EncodedImage::from_file_contents(jpeg_data);
                 if self.recording {
                     self.stream.log(path, &image)?;
                 } else {
@@ -159,4 +177,20 @@ fn build_recording_stream(
     };
     let builder = RecordingStreamBuilder::new(APP_NAME).batcher_config(config);
     Ok(builder.set_sinks(sinks)?)
+}
+
+fn encode_rgb_to_jpeg(
+    rgb_data: &[u8],
+    width: u32,
+    height: u32,
+    quality: u8,
+) -> Result<Vec<u8>, BoxedError> {
+    let img: ImageBuffer<Rgb<u8>, _> =
+        ImageBuffer::from_raw(width, height, rgb_data).ok_or("Invalid image dimensions")?;
+
+    let mut jpeg_data = Cursor::new(Vec::new());
+    let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_data, quality);
+    encoder.encode(img.as_raw(), width, height, ExtendedColorType::Rgb8)?;
+
+    Ok(jpeg_data.into_inner())
 }

@@ -104,12 +104,26 @@ mod _rust {
 
     #[pymethods]
     impl PyRerunClient {
-        fn log_encoded_image(&self, path: String, data: Vec<u8>) -> PyResult<()> {
+        #[pyo3(signature = (path, data, width, height, quality=75))]
+        fn log_rgb_image(
+            &self,
+            path: String,
+            data: Vec<u8>,
+            width: u32,
+            height: u32,
+            quality: u8,
+        ) -> PyResult<()> {
             self.inner
                 .read()
                 .unwrap()
-                .send_log_request(LogRequest::LogEncodedImage { path, data })
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log encoded image: {}", e)))
+                .send_log_request(LogRequest::LogRgbImage {
+                    path,
+                    data,
+                    width,
+                    height,
+                    quality,
+                })
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to log RGB image: {}", e)))
         }
 
         fn start_recording(&self) -> PyResult<()> {
