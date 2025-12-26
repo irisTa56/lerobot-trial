@@ -119,15 +119,18 @@ def image_logger_thread(
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image_buffer.update(frame_rgb)
 
-            height, width = frame_rgb.shape[:2]
-            rerun_recorder.log_rgb_image(
-                "mjpeg_stream/image",
-                frame_rgb.tobytes(),
-                width,
-                height,
-                quality=75,
+            success, jpeg_buffer = cv2.imencode(
+                ".jpg", frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 75]
             )
-            logger.debug(f"Logged RGB image: {width}x{height}")
+            if success:
+                rerun_recorder.log_encoded_image(
+                    "mjpeg_stream/image", jpeg_buffer.tobytes()
+                )
+                logger.debug(
+                    f"Logged JPEG compressed image: {frame_rgb.shape[1]}x{frame_rgb.shape[0]}"
+                )
+            else:
+                logger.warning("Failed to encode frame as JPEG")
 
     except (cv2.error, OSError, ValueError) as e:
         logger.error(f"Error in image logger thread: {e}")

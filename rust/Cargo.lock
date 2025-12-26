@@ -4792,7 +4792,6 @@ version = "0.1.0"
 dependencies = [
  "dora-message",
  "dora-node-api",
- "image",
  "ndarray 0.17.1",
  "pyo3",
  "pyo3-arrow",
